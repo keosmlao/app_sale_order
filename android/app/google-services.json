@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1072195206284",
+    "project_id": "odgsale-b697b",
+    "storage_bucket": "odgsale-b697b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1072195206284:android:b36c48a3edecd885afcfa9",
+        "android_client_info": {
+          "package_name": "net.odien.odg_sale_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBAJlI2M5jymMhe-jqRYvHkI17zc9QpggM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
