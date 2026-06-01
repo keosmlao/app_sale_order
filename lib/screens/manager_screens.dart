@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../app_scope.dart';
 import '../app_theme.dart';
 import '../models/models.dart';
+import '../services/approver_delegation.dart';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Manager Hub — the launcher screen the user reaches from Profile.
@@ -17,70 +18,82 @@ class ManagerHubScreen extends StatelessWidget {
 
   static const _features = <_Feature>[
     _Feature(
-      icon: Icons.leaderboard_outlined,
+      icon: Icons.leaderboard_rounded,
       title: 'ອັນດັບທີມຂາຍ',
       subtitle: 'ຍອດແຍກຕາມພະນັກງານ',
       route: 'team',
+      accent: AppColors.warning,
+      disabled: false,
     ),
     _Feature(
-      icon: Icons.point_of_sale_outlined,
+      icon: Icons.point_of_sale_rounded,
       title: 'ກິດຈະກຳ Cashier',
       subtitle: 'ຍອດຮັບເງິນລາຍຄົນ',
       route: 'cashier',
+      accent: AppColors.info,
     ),
     _Feature(
-      icon: Icons.campaign_outlined,
+      icon: Icons.campaign_rounded,
       title: 'ປະສິດທິພາບ Promo',
       subtitle: 'ROI ຂອງໂປຣໂມຊັນ',
       route: 'promo-eff',
+      accent: AppColors.brandOrange,
     ),
     _Feature(
-      icon: Icons.local_offer_outlined,
+      icon: Icons.local_offer_rounded,
       title: 'ຈັດການ Promotion',
       subtitle: 'ສ້າງ / ແກ້ໄຂ promo',
       route: 'promotions',
+      accent: AppColors.brandOrange,
     ),
     _Feature(
-      icon: Icons.card_giftcard_outlined,
+      icon: Icons.card_giftcard_rounded,
       title: 'Loyalty Config',
       subtitle: 'ຕັ້ງຄ່າຄະແນນສະສົມ',
       route: 'loyalty',
+      accent: AppColors.accent,
     ),
     _Feature(
-      icon: Icons.inventory_2_outlined,
+      icon: Icons.inventory_2_rounded,
       title: 'ຄຳຂໍຕື່ມສິນຄ້າ',
       subtitle: 'ອະນຸມັດ stock refill',
       route: 'refill',
+      accent: AppColors.primary,
     ),
     _Feature(
-      icon: Icons.summarize_outlined,
+      icon: Icons.summarize_rounded,
       title: 'ຍອດຂາຍລາຍວັນ',
       subtitle: 'CAK / INK ຂອງມື້',
       route: 'daily-sales',
+      accent: AppColors.success,
     ),
     _Feature(
-      icon: Icons.bar_chart_outlined,
+      icon: Icons.bar_chart_rounded,
       title: 'ສິນຄ້າຂາຍດີ',
       subtitle: 'Top items ໂດຍຍອດ',
       route: 'items',
+      accent: AppColors.info,
     ),
     _Feature(
-      icon: Icons.account_balance_wallet_outlined,
+      icon: Icons.account_balance_wallet_rounded,
       title: 'ຍອດຮັບເງິນລາຍວັນ',
       subtitle: 'ເງິນສົດ / ໂອນ / ສະກຸນ',
       route: 'daily-payments',
+      accent: AppColors.success,
     ),
     _Feature(
-      icon: Icons.people_outline,
+      icon: Icons.people_rounded,
       title: 'ພະນັກງານ',
       subtitle: 'ບັນຊີລາຍຊື່ (read-only)',
       route: 'employees',
+      accent: Color(0xFF475569),
     ),
     _Feature(
-      icon: Icons.contacts_outlined,
+      icon: Icons.contacts_rounded,
       title: 'ສະມາຊິກ',
       subtitle: 'ຄົ້ນຫາລູກຄ້າ',
       route: 'members',
+      accent: AppColors.accent,
     ),
   ];
 
@@ -135,23 +148,92 @@ class ManagerHubScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('ສຳລັບຜູ້ຈັດການ')),
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('ສຳລັບຜູ້ຈັດການ'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: SafeArea(
         child: TabletConstrain(
           maxWidth: 720,
-          child: GridView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.45,
-            ),
-            itemCount: _features.length,
-            itemBuilder: (context, i) {
-              final f = _features[i];
-              return _FeatureTile(feature: f, onTap: () => _open(context, f));
-            },
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+                kSpace4, kSpace3, kSpace4, kSpace8),
+            children: [
+              FadeInSlide(
+                child: HeroPanel(
+                  colors: const [
+                    AppColors.primaryDark,
+                    AppColors.primary,
+                  ],
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.22),
+                          borderRadius: BorderRadius.circular(kRadiusMd),
+                        ),
+                        child: const Icon(
+                          Icons.admin_panel_settings_rounded,
+                          color: Colors.white,
+                          size: 26,
+                        ),
+                      ),
+                      const SizedBox(width: kSpace3),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'ສູນກາງຜູ້ຈັດການ',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'ລາຍງານ · ການອະນຸມັດ · ການຕັ້ງຄ່າ',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.85),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: kSpace5),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate:
+                    const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: kSpace3,
+                  mainAxisSpacing: kSpace3,
+                  childAspectRatio: 1.4,
+                ),
+                itemCount: _features.length,
+                itemBuilder: (context, i) {
+                  final f = _features[i];
+                  return FadeInSlide(
+                    delay: Duration(milliseconds: 80 + i * 40),
+                    child: _FeatureTile(
+                        feature: f, onTap: () => _open(context, f)),
+                  );
+                },
+              ),
+            ],
           ),
         ),
       ),
@@ -165,12 +247,14 @@ class _Feature {
     required this.title,
     required this.subtitle,
     required this.route,
+    this.accent,
     this.disabled = false,
   });
   final IconData icon;
   final String title;
   final String subtitle;
   final String route;
+  final Color? accent;
   final bool disabled;
 }
 
@@ -181,64 +265,48 @@ class _FeatureTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(kRadiusMd),
-      child: Ink(
-        decoration: posCardDecoration(radius: kRadiusMd),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(kRadiusMd),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: feature.disabled
-                        ? AppColors.cardElev
-                        : AppColors.primary50,
-                    borderRadius: BorderRadius.circular(kRadiusSm),
-                  ),
-                  child: Icon(
-                    feature.icon,
-                    color: feature.disabled
-                        ? AppColors.textSoft
-                        : AppColors.primary,
-                    size: 20,
-                  ),
+    final c = feature.disabled
+        ? AppColors.textMuted
+        : (feature.accent ?? AppColors.primary);
+    return SurfaceCard(
+      onTap: onTap,
+      padding: const EdgeInsets.all(kSpace3 + 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          IconBubble(icon: feature.icon, color: c),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                feature.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: feature.disabled
+                      ? AppColors.textMuted
+                      : AppColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13.5,
                 ),
-                const Spacer(),
-                Text(
-                  feature.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: feature.disabled
-                        ? AppColors.textMuted
-                        : AppColors.textPrimary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                feature.subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                  height: 1.25,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  feature.subtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ),
+        ],
       ),
     );
   }
@@ -421,7 +489,7 @@ class _TeamRankingsScreenState extends State<TeamRankingsScreen> {
               future: _future,
               builder: (context, snap) {
                 if (snap.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const SkeletonListPlaceholder();
                 }
                 if (snap.hasError) {
                   return _StateView.error(snap.error.toString());
@@ -438,14 +506,11 @@ class _TeamRankingsScreenState extends State<TeamRankingsScreen> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                     children: [
-                      // Top totals card.
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: posCardDecoration(radius: kRadiusMd),
+                      GradientHero(
                         child: Row(
                           children: [
                             Expanded(
-                              child: _StatBlock(
+                              child: _HeroStatColumn(
                                 label: 'ຍອດລວມທີມ',
                                 value: '${_fmt.format(data.grandTotal)} ກີບ',
                               ),
@@ -453,10 +518,10 @@ class _TeamRankingsScreenState extends State<TeamRankingsScreen> {
                             Container(
                               width: 1,
                               height: 36,
-                              color: AppColors.divider,
+                              color: Colors.white.withValues(alpha: 0.3),
                             ),
                             Expanded(
-                              child: _StatBlock(
+                              child: _HeroStatColumn(
                                 label: 'ບິນທີມ',
                                 value: '${_fmt.format(data.grandOrders)} ບິນ',
                               ),
@@ -464,8 +529,7 @@ class _TeamRankingsScreenState extends State<TeamRankingsScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      // Per-person rows. Ranked by activeTotal desc by API.
+                      const SizedBox(height: 14),
                       for (var i = 0; i < data.rows.length; i++) ...[
                         if (i > 0) const SizedBox(height: 8),
                         _SalespersonRow(rank: i + 1, row: data.rows[i], fmt: _fmt),
@@ -577,8 +641,10 @@ class _SalespersonRow extends StatelessWidget {
   }
 }
 
-class _StatBlock extends StatelessWidget {
-  const _StatBlock({required this.label, required this.value});
+// Hero-friendly variant: white text on the emerald gradient backdrop.
+// Used by report screens that put a totals card at the top.
+class _HeroStatColumn extends StatelessWidget {
+  const _HeroStatColumn({required this.label, required this.value});
   final String label;
   final String value;
 
@@ -590,9 +656,10 @@ class _StatBlock extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
+            color: Colors.white.withValues(alpha: 0.85),
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
           ),
         ),
         const SizedBox(height: 4),
@@ -601,10 +668,12 @@ class _StatBlock extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: Text(
             value,
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.3,
+              fontFeatures: kTabularFigures,
             ),
           ),
         ),
@@ -671,7 +740,7 @@ class _CashierActivityScreenState extends State<CashierActivityScreen> {
               future: _future,
               builder: (context, snap) {
                 if (snap.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const SkeletonListPlaceholder();
                 }
                 if (snap.hasError) return _StateView.error(snap.error.toString());
                 final rows = snap.data ?? const [];
@@ -681,12 +750,40 @@ class _CashierActivityScreenState extends State<CashierActivityScreen> {
                     _refresh();
                     await _future;
                   },
-                  child: ListView.separated(
+                  child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                    itemCount: rows.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) =>
+                    children: [
+                      GradientHero(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _HeroStatColumn(
+                                label: 'ຍອດຮັບເງິນລວມ',
+                                value:
+                                    '${_fmt.format(rows.fold<double>(0, (s, r) => s + r.totalKip))} ກີບ',
+                              ),
+                            ),
+                            Container(
+                                width: 1,
+                                height: 36,
+                                color:
+                                    Colors.white.withValues(alpha: 0.3)),
+                            Expanded(
+                              child: _HeroStatColumn(
+                                label: 'ຈຳນວນບິນ',
+                                value: _fmt.format(rows.fold<int>(
+                                    0, (s, r) => s + r.billCount)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      for (var i = 0; i < rows.length; i++) ...[
+                        if (i > 0) const SizedBox(height: 8),
                         _CashierRow(row: rows[i], fmt: _fmt),
+                      ],
+                    ],
                   ),
                 );
               },
@@ -860,23 +957,50 @@ class _PromoEffectivenessScreenState extends State<PromoEffectivenessScreen> {
               future: _future,
               builder: (context, snap) {
                 if (snap.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const SkeletonListPlaceholder();
                 }
                 if (snap.hasError) return _StateView.error(snap.error.toString());
                 final rows = snap.data ?? const [];
                 if (rows.isEmpty) return const _StateView.empty();
+                final activeCount = rows.where((r) => r.isActive).length;
                 return RefreshIndicator(
                   onRefresh: () async {
                     _refresh();
                     await _future;
                   },
-                  child: ListView.separated(
+                  child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                    itemCount: rows.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) {
-                      final r = rows[i];
-                      return Container(
+                    children: [
+                      GradientHero(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _HeroStatColumn(
+                                label: 'ໂປຣທັງໝົດ',
+                                value: '${rows.length}',
+                              ),
+                            ),
+                            Container(
+                                width: 1,
+                                height: 36,
+                                color:
+                                    Colors.white.withValues(alpha: 0.3)),
+                            Expanded(
+                              child: _HeroStatColumn(
+                                label: 'ກຳລັງເປີດ',
+                                value: '$activeCount',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      for (var i = 0; i < rows.length; i++) ...[
+                        if (i > 0) const SizedBox(height: 8),
+                        Builder(
+                          builder: (_) {
+                            final r = rows[i];
+                            return Container(
                         padding: const EdgeInsets.all(14),
                         decoration: posCardDecoration(radius: kRadiusMd),
                         child: Column(
@@ -992,8 +1116,11 @@ class _PromoEffectivenessScreenState extends State<PromoEffectivenessScreen> {
                             ),
                           ],
                         ),
-                      );
-                    },
+                            );
+                          },
+                        ),
+                      ],
+                    ],
                   ),
                 );
               },
@@ -1059,24 +1186,49 @@ class _PromotionManagementScreenState
         future: _future,
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+            return const SkeletonListPlaceholder();
           }
           if (snap.hasError) return _StateView.error(snap.error.toString());
           final rows = snap.data ?? const [];
           if (rows.isEmpty) return const _StateView.empty();
+          final activeCount = rows.where((p) => p.isActive).length;
           return RefreshIndicator(
             onRefresh: () async {
               _refresh();
               await _future;
             },
-            child: ListView.separated(
+            child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              itemCount: rows.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (_, i) {
-                final p = rows[i];
-                final busy = _busyId == p.id;
-                return Container(
+              children: [
+                GradientHero(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _HeroStatColumn(
+                          label: 'Promotion ທັງໝົດ',
+                          value: '${rows.length}',
+                        ),
+                      ),
+                      Container(
+                          width: 1,
+                          height: 36,
+                          color: Colors.white.withValues(alpha: 0.3)),
+                      Expanded(
+                        child: _HeroStatColumn(
+                          label: 'ກຳລັງເປີດ',
+                          value: '$activeCount',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                for (var i = 0; i < rows.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 8),
+                  Builder(builder: (_) {
+                    final p = rows[i];
+                    final busy = _busyId == p.id;
+                    return Container(
                   padding: const EdgeInsets.all(14),
                   decoration: posCardDecoration(radius: kRadiusMd),
                   child: Column(
@@ -1141,7 +1293,9 @@ class _PromotionManagementScreenState
                     ],
                   ),
                 );
-              },
+                  }),
+                ],
+              ],
             ),
           );
         },
@@ -1374,7 +1528,7 @@ class _StockRefillScreenState extends State<StockRefillScreen> {
         future: _future,
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+            return const SkeletonListPlaceholder();
           }
           if (snap.hasError) return _StateView.error(snap.error.toString());
           final data = snap.data!;
@@ -1606,22 +1760,52 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
         future: _future,
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+            return const SkeletonListPlaceholder();
           }
           if (snap.hasError) return _StateView.error(snap.error.toString());
           final rows = snap.data ?? const [];
           if (rows.isEmpty) return const _StateView.empty();
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            itemCount: rows.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (_, i) {
-              final e = rows[i];
-              final name = e.nickname ??
-                  e.fullnameLo ??
-                  e.fullnameEn ??
-                  e.employeeCode ??
-                  '—';
+          final managerCount =
+              rows.where((e) => e.appRole == AppRole.manager).length;
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: GradientHero(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _HeroStatColumn(
+                          label: 'ພະນັກງານ',
+                          value: '${rows.length}',
+                        ),
+                      ),
+                      Container(
+                          width: 1,
+                          height: 36,
+                          color: Colors.white.withValues(alpha: 0.3)),
+                      Expanded(
+                        child: _HeroStatColumn(
+                          label: 'Manager',
+                          value: '$managerCount',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                  itemCount: rows.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (_, i) {
+                    final e = rows[i];
+                    final name = e.nickname ??
+                        e.fullnameLo ??
+                        e.fullnameEn ??
+                        e.employeeCode ??
+                        '—';
               return Container(
                 padding: const EdgeInsets.all(14),
                 decoration: posCardDecoration(radius: kRadiusMd),
@@ -1690,8 +1874,211 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
                 ),
               );
             },
+                ),
+              ),
+            ],
           );
         },
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 7.5) Approver delegation — manager picks which heads can approve
+//      price requests on their behalf. Backend is mocked for now via
+//      ApproverDelegationService (in-memory).
+// ─────────────────────────────────────────────────────────────────────────
+
+class ApproverManagementScreen extends StatefulWidget {
+  const ApproverManagementScreen({super.key});
+  @override
+  State<ApproverManagementScreen> createState() =>
+      _ApproverManagementScreenState();
+}
+
+class _ApproverManagementScreenState extends State<ApproverManagementScreen> {
+  Future<List<Employee>>? _future;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _future ??= AppScope.of(context).api.listEmployees();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('ກຳນົດຜູ້ອະນຸມັດ')),
+      body: FutureBuilder<List<Employee>>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return const SkeletonListPlaceholder();
+          }
+          if (snap.hasError) {
+            return _StateView.error(snap.error.toString());
+          }
+          // Only "head" employees are candidates — managers already
+          // approve by default, salespeople/PC don't need to.
+          final heads = (snap.data ?? const <Employee>[])
+              .where((e) => e.appRole == AppRole.head)
+              .toList();
+          if (heads.isEmpty) {
+            return const _StateView.empty(
+              message: 'ບໍ່ມີຫົວໜ້າໜ່ວຍງານໃນລະບົບ',
+            );
+          }
+          final delegatedCount = heads
+              .where((e) =>
+                  ApproverDelegationService.isDelegated(e.employeeCode ?? ''))
+              .length;
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            children: [
+              GradientHero(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _HeroStatColumn(
+                        label: 'ຫົວໜ້າທັງໝົດ',
+                        value: '${heads.length}',
+                      ),
+                    ),
+                    Container(
+                        width: 1,
+                        height: 36,
+                        color: Colors.white.withValues(alpha: 0.3)),
+                    Expanded(
+                      child: _HeroStatColumn(
+                        label: 'ມອບສິດແລ້ວ',
+                        value: '$delegatedCount',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              _InfoBanner(
+                icon: Icons.info_outline,
+                text:
+                    'ເລືອກຫົວໜ້າທີ່ສາມາດອະນຸມັດລາຄາແທນຜູ້ຈັດການ. ການປ່ຽນແປງເກັບໄວ້ໃນເຄື່ອງ (mock).',
+              ),
+              const SizedBox(height: 12),
+              ...heads.map((e) {
+                final code = e.employeeCode ?? '';
+                final delegated = ApproverDelegationService.isDelegated(code);
+                final name = e.displayName;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                  decoration: posCardDecoration(radius: kRadiusMd),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: delegated
+                              ? AppColors.primary50
+                              : AppColors.cardElev,
+                          borderRadius: BorderRadius.circular(kRadiusMd),
+                        ),
+                        child: Text(
+                          name.isNotEmpty ? name[0].toUpperCase() : '?',
+                          style: TextStyle(
+                            color: delegated
+                                ? AppColors.primary
+                                : AppColors.textPrimary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${e.employeeCode ?? '—'} · ${e.positionCode ?? 'ຫົວໜ້າ'}',
+                              style: TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: delegated,
+                        onChanged: code.isEmpty
+                            ? null
+                            : (val) {
+                                setState(() {
+                                  ApproverDelegationService.setDelegated(
+                                    code,
+                                    val,
+                                  );
+                                });
+                              },
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _InfoBanner extends StatelessWidget {
+  const _InfoBanner({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primary50,
+        borderRadius: BorderRadius.circular(kRadiusMd),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: AppColors.primary, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1737,22 +2124,51 @@ class _MemberListScreenState extends State<MemberListScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: TextField(
-              controller: _searchCtl,
-              onSubmitted: _search,
-              decoration: InputDecoration(
-                hintText: 'ຄົ້ນຫາຊື່ ຫຼື ເບີໂທ',
-                prefixIcon: Icon(Icons.search),
-                suffixIcon: _searchCtl.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: Icon(Icons.close),
-                        onPressed: () {
-                          _searchCtl.clear();
-                          _search('');
-                        },
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+            child: GradientHero(
+              padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
+              child: Row(
+                children: [
+                  Icon(Icons.contacts_outlined,
+                      size: 18,
+                      color: Colors.white.withValues(alpha: 0.95)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: _searchCtl,
+                      onSubmitted: _search,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
                       ),
+                      cursorColor: Colors.white,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        filled: false,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                        hintText: 'ຄົ້ນຫາສະມາຊິກ',
+                        hintStyle: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (_searchCtl.text.isNotEmpty)
+                    IconButton(
+                      icon: Icon(Icons.close,
+                          color: Colors.white.withValues(alpha: 0.9),
+                          size: 18),
+                      onPressed: () {
+                        _searchCtl.clear();
+                        _search('');
+                      },
+                    ),
+                ],
               ),
             ),
           ),
@@ -1761,7 +2177,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
               future: _future,
               builder: (context, snap) {
                 if (snap.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const SkeletonListPlaceholder();
                 }
                 if (snap.hasError) return _StateView.error(snap.error.toString());
                 final rows = snap.data ?? const [];
@@ -1939,7 +2355,7 @@ class _DailySalesScreenState extends State<DailySalesScreen> {
               future: _future,
               builder: (context, snap) {
                 if (snap.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const SkeletonListPlaceholder();
                 }
                 if (snap.hasError) return _StateView.error(snap.error.toString());
                 final data = snap.data!;
@@ -1951,21 +2367,19 @@ class _DailySalesScreenState extends State<DailySalesScreen> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: posCardDecoration(radius: kRadiusMd),
+                      GradientHero(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _StatBlock(
+                            _HeroStatColumn(
                               label: 'ຍອດລວມ',
                               value: '${_fmt.format(data.totals.total)} ບາດ',
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 14),
                             Row(
                               children: [
                                 Expanded(
-                                  child: _StatBlock(
+                                  child: _HeroStatColumn(
                                     label: 'CAK',
                                     value:
                                         '${_fmt.format(data.totals.cakTotal)} (${data.totals.cakCount})',
@@ -1974,9 +2388,10 @@ class _DailySalesScreenState extends State<DailySalesScreen> {
                                 Container(
                                     width: 1,
                                     height: 36,
-                                    color: AppColors.divider),
+                                    color:
+                                        Colors.white.withValues(alpha: 0.3)),
                                 Expanded(
-                                  child: _StatBlock(
+                                  child: _HeroStatColumn(
                                     label: 'INK',
                                     value:
                                         '${_fmt.format(data.totals.inkTotal)} (${data.totals.inkCount})',
@@ -1988,7 +2403,7 @@ class _DailySalesScreenState extends State<DailySalesScreen> {
                             Row(
                               children: [
                                 Expanded(
-                                  child: _StatBlock(
+                                  child: _HeroStatColumn(
                                     label: 'ກ່ອນ VAT',
                                     value: _fmt.format(data.totals.totalBeforeVat),
                                   ),
@@ -1996,9 +2411,10 @@ class _DailySalesScreenState extends State<DailySalesScreen> {
                                 Container(
                                     width: 1,
                                     height: 36,
-                                    color: AppColors.divider),
+                                    color:
+                                        Colors.white.withValues(alpha: 0.3)),
                                 Expanded(
-                                  child: _StatBlock(
+                                  child: _HeroStatColumn(
                                     label: 'VAT',
                                     value: _fmt.format(data.totals.totalVat),
                                   ),
@@ -2227,7 +2643,7 @@ class _ItemAnalyticsScreenState extends State<ItemAnalyticsScreen> {
               future: _future,
               builder: (context, snap) {
                 if (snap.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const SkeletonListPlaceholder();
                 }
                 if (snap.hasError) return _StateView.error(snap.error.toString());
                 final data = snap.data!;
@@ -2240,13 +2656,11 @@ class _ItemAnalyticsScreenState extends State<ItemAnalyticsScreen> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: posCardDecoration(radius: kRadiusMd),
+                      GradientHero(
                         child: Row(
                           children: [
                             Expanded(
-                              child: _StatBlock(
+                              child: _HeroStatColumn(
                                 label: 'ຍອດລວມ',
                                 value: '${_fmt.format(data.grandTotal)} ກີບ',
                               ),
@@ -2254,9 +2668,10 @@ class _ItemAnalyticsScreenState extends State<ItemAnalyticsScreen> {
                             Container(
                                 width: 1,
                                 height: 36,
-                                color: AppColors.divider),
+                                color:
+                                    Colors.white.withValues(alpha: 0.3)),
                             Expanded(
-                              child: _StatBlock(
+                              child: _HeroStatColumn(
                                 label: 'ຈຳນວນລວມ',
                                 value: _qtyFmt.format(data.grandQty),
                               ),
@@ -2264,7 +2679,7 @@ class _ItemAnalyticsScreenState extends State<ItemAnalyticsScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
                       for (var i = 0; i < data.rows.length; i++) ...[
                         if (i > 0) const SizedBox(height: 8),
                         _ItemRow(
@@ -2486,7 +2901,7 @@ class _DailyPaymentsScreenState extends State<DailyPaymentsScreen> {
               future: _future,
               builder: (context, snap) {
                 if (snap.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const SkeletonListPlaceholder();
                 }
                 if (snap.hasError) return _StateView.error(snap.error.toString());
                 final data = snap.data!;
@@ -2498,13 +2913,11 @@ class _DailyPaymentsScreenState extends State<DailyPaymentsScreen> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: posCardDecoration(radius: kRadiusMd),
+                      GradientHero(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _StatBlock(
+                            _HeroStatColumn(
                               label: 'ຍອດຮັບເງິນລວມ (ກີບ)',
                               value: _fmt.format(data.totals.kipActive),
                             ),
@@ -2512,15 +2925,15 @@ class _DailyPaymentsScreenState extends State<DailyPaymentsScreen> {
                             Text(
                               '${data.totals.receiptsActive} ໃບຮັບເງິນ${data.totals.receiptsCancelled > 0 ? " · ${data.totals.receiptsCancelled} ຍົກເລີກ" : ""}',
                               style: TextStyle(
-                                color: AppColors.textMuted,
+                                color: Colors.white.withValues(alpha: 0.85),
                                 fontSize: 12,
-                                fontWeight: FontWeight.w500,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
                       Container(
                         padding: const EdgeInsets.all(14),
                         decoration: posCardDecoration(radius: kRadiusMd),

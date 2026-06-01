@@ -42,6 +42,8 @@ dependencies:
   firebase_core: ^4.2.0
   firebase_messaging: ^16.1.1
   flutter_local_notifications: ^19.4.2
+  google_fonts: ^6.2.1
+  fl_chart: ^0.69.0
 
 dev_dependencies:
   flutter_test:
@@ -64,6 +66,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/images/odm.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

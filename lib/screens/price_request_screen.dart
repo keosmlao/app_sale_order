@@ -159,21 +159,17 @@ class _PriceRequestScreenState extends State<PriceRequestScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppColors.gold),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
         title: Text(
           'ຂໍລາຄາພິເສດ',
           style: TextStyle(
             color: AppColors.textPrimary,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w800,
             fontSize: 17,
           ),
         ),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const BrandedSpinner(label: 'ກຳລັງໂຫຼດຂໍ້ມູນ…')
           : TabletConstrain(child: _buildBody()),
       bottomNavigationBar:
           _loading ? null : TabletConstrain(child: _buildSubmitBar()),
@@ -185,127 +181,102 @@ class _PriceRequestScreenState extends State<PriceRequestScreen> {
     return FadeInSlide(
       duration: const Duration(milliseconds: 500),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
+        padding:
+            const EdgeInsets.fromLTRB(kSpace4, kSpace3, kSpace4, kSpace5),
         children: [
-        // Info banner: explains the standalone request → auto-apply flow.
-        Container(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-          decoration: BoxDecoration(
-            color: AppColors.warning.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(kRadiusMd),
-            border: Border.all(
-              color: AppColors.warning.withValues(alpha: 0.4),
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: AppColors.warning.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.lightbulb,
-                  color: AppColors.warning,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'ຂໍລາຄາພິເສດກ່ອນ',
-                      style: TextStyle(
-                        color: AppColors.warning,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 13,
-                        height: 1.2,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'ເມື່ອຜູ້ຈັດການອະນຸມັດ, ລະບົບຈະໃຊ້ລາຄາໃໝ່ໃຫ້ອັດຕະໂນມັດເມື່ອເພີ່ມສິນຄ້ານີ້ໃຫ້ລູກຄ້ານີ້ໃນ Sale Order.',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        _pickerRow(
-          icon: Icons.person_outline,
-          label: 'ລູກຄ້າ',
-          value: _customer?.name,
-          subValue: _customer?.phone ?? _customer?.groupName,
-          onTap: _pickCustomer,
-        ),
-        const SizedBox(height: 10),
-        _pickerRow(
-          icon: Icons.inventory_2_outlined,
-          label: 'ສິນຄ້າ',
-          value: item?.nameLo,
-          subValue: item == null
-              ? null
-              : '${item.code} · ລາຄາເດີມ ${_moneyFmt.format(item.salePriceKip)} ກີບ',
-          onTap: _items.isEmpty ? null : _pickItem,
-          disabled: _items.isEmpty,
-          disabledHint: 'ກຳລັງໂຫຼດສິນຄ້າ…',
-        ),
-        const SizedBox(height: 14),
-        // Note for the salesperson — the approver decides the price, the
-        // requestor only declares the need + reason.
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: AppColors.gold.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.gold.withValues(alpha: 0.30)),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.info_outline, size: 18, color: AppColors.gold),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'ຜູ້ຈັດການຈະເປັນຜູ້ກຳນົດລາຄາໃໝ່ — ກະລຸນາໃສ່ເຫດຜົນເພື່ອພິຈາລະນາ',
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
+          // Hero card explaining the flow.
+          HeroPanel(
+            colors: const [AppColors.brandOrange, AppColors.brandOrangeDark],
+            padding: const EdgeInsets.fromLTRB(
+                kSpace5, kSpace4, kSpace5, kSpace5),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(kRadiusMd),
+                  ),
+                  child: const Icon(
+                    Icons.price_change_rounded,
+                    color: Colors.white,
+                    size: 24,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(width: kSpace3),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'ຂໍລາຄາພິເສດກ່ອນ',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'ເມື່ອຜູ້ຈັດການອະນຸມັດ, ລະບົບຈະໃຊ້ລາຄາໃໝ່ໃຫ້ອັດຕະໂນມັດເມື່ອເພີ່ມສິນຄ້ານີ້ໃຫ້ລູກຄ້ານີ້ໃນ Sale Order.',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 14),
-        TextField(
-          controller: _reasonCtl,
-          maxLines: 3,
-          onChanged: (_) => setState(() {}),
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 14,
+          const SizedBox(height: kSpace4),
+          _pickerRow(
+            icon: Icons.person_rounded,
+            label: 'ລູກຄ້າ',
+            value: _customer?.name,
+            subValue: _customer?.phone ?? _customer?.groupName,
+            onTap: _pickCustomer,
           ),
-          decoration: const InputDecoration(
-            labelText: 'ເຫດຜົນ *',
-            hintText: 'ເຊັ່ນ: ລູກຄ້າ VIP, ໂປຣ, ສິນຄ້າເກົ່າ…',
-            alignLabelWithHint: true,
+          const SizedBox(height: kSpace2),
+          _pickerRow(
+            icon: Icons.inventory_2_rounded,
+            label: 'ສິນຄ້າ',
+            value: item?.nameLo,
+            subValue: item == null
+                ? null
+                : '${item.code} · ລາຄາເດີມ ${_moneyFmt.format(item.salePriceKip)} ກີບ',
+            onTap: _items.isEmpty ? null : _pickItem,
+            disabled: _items.isEmpty,
+            disabledHint: 'ກຳລັງໂຫຼດສິນຄ້າ…',
           ),
-        ),
-      ],
+          const SizedBox(height: kSpace4),
+          const InlineBanner(
+            kind: BannerKind.info,
+            message:
+                'ຜູ້ຈັດການຈະເປັນຜູ້ກຳນົດລາຄາໃໝ່ — ກະລຸນາໃສ່ເຫດຜົນເພື່ອພິຈາລະນາ',
+          ),
+          const SizedBox(height: kSpace3),
+          TextField(
+            controller: _reasonCtl,
+            maxLines: 3,
+            onChanged: (_) => setState(() {}),
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 14,
+            ),
+            decoration: const InputDecoration(
+              labelText: 'ເຫດຜົນ *',
+              hintText: 'ເຊັ່ນ: ລູກຄ້າ VIP, ໂປຣ, ສິນຄ້າເກົ່າ…',
+              alignLabelWithHint: true,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -320,82 +291,65 @@ class _PriceRequestScreenState extends State<PriceRequestScreen> {
     String? disabledHint,
   }) {
     final active = value != null;
-    return GlassCard(
-      radius: kRadiusMd,
-      padding: EdgeInsets.zero,
-      borderOpacity: active ? 0.35 : 0.08,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(kRadiusMd),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: active
-                      ? AppColors.primary.withValues(alpha: 0.18)
-                      : AppColors.cardElev,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  icon,
-                  color: active ? AppColors.primary : AppColors.textMuted,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.4,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      value ?? (disabled ? (disabledHint ?? '—') : 'ກົດເພື່ອເລືອກ'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: active
-                            ? AppColors.textPrimary
-                            : AppColors.textMuted,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 14,
-                      ),
-                    ),
-                    if (subValue != null && subValue.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subValue,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.chevron_right,
-                color: AppColors.textMuted,
-              ),
-            ],
+    return SurfaceCard(
+      onTap: onTap,
+      padding:
+          const EdgeInsets.fromLTRB(kSpace4, kSpace3 + 2, kSpace3, kSpace3 + 2),
+      child: Row(
+        children: [
+          IconBubble(
+            icon: icon,
+            color: active ? AppColors.primary : AppColors.textMuted,
+            size: BubbleSize.md,
           ),
-        ),
+          const SizedBox(width: kSpace3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value ??
+                      (disabled ? (disabledHint ?? '—') : 'ກົດເພື່ອເລືອກ'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color:
+                        active ? AppColors.textPrimary : AppColors.textMuted,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14.5,
+                  ),
+                ),
+                if (subValue != null && subValue.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subValue,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: AppColors.textMuted,
+          ),
+        ],
       ),
     );
   }

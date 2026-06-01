@@ -473,6 +473,12 @@ class OrderItem {
   final Product? product;
   final int quantity;
   final double unitPrice;
+  // Per-line warehouse / shelf / salesperson — populated on edit-mode
+  // fetch so the cart can restore the original selections without making
+  // the cashier re-pick them.
+  final String? warehouseCode;
+  final String? locationCode;
+  final String? salespersonCode;
 
   OrderItem({
     required this.id,
@@ -480,6 +486,9 @@ class OrderItem {
     this.product,
     required this.quantity,
     required this.unitPrice,
+    this.warehouseCode,
+    this.locationCode,
+    this.salespersonCode,
   });
 
   double get subtotal => unitPrice * quantity;
@@ -492,6 +501,15 @@ class OrderItem {
         : null,
     quantity: (j['quantity'] as num).toInt(),
     unitPrice: _toDouble(j['unitPrice']),
+    warehouseCode: (j['warehouseCode'] as String?)?.trim().isEmpty == true
+        ? null
+        : j['warehouseCode'] as String?,
+    locationCode: (j['locationCode'] as String?)?.trim().isEmpty == true
+        ? null
+        : j['locationCode'] as String?,
+    salespersonCode: (j['salespersonCode'] as String?)?.trim().isEmpty == true
+        ? null
+        : j['salespersonCode'] as String?,
   );
 }
 
@@ -640,6 +658,156 @@ class ProductSetDetailItem {
       );
 }
 
+// ── Set (ຊຸດ) availability ────────────────────────────────────────────────
+// Returned by /api/products/{id}/set/availability — mirrors the web POS
+// set-build modal. A set product (eg. an air-con kit) holds no pre-built
+// balance of its own; it's assembled from components at sale time, so stock
+// is checked component-by-component at the WAREHOUSE level (summed across
+// shelf locations). `buildableSets` = how many whole sets a warehouse can
+// build, capped by its weakest component.
+
+// One component definition of a set + how many units each set needs.
+class SetComponent {
+  final int lineNumber;
+  final String itemCode;
+  final String itemName;
+  final String? unitCode;
+  final double requiredPerSet;
+
+  const SetComponent({
+    required this.lineNumber,
+    required this.itemCode,
+    required this.itemName,
+    this.unitCode,
+    required this.requiredPerSet,
+  });
+
+  factory SetComponent.fromJson(Map<String, dynamic> j) => SetComponent(
+    lineNumber: (j['lineNumber'] as num?)?.toInt() ?? 0,
+    itemCode: (j['itemCode'] as String?) ?? '',
+    itemName: (j['itemName'] as String?) ?? (j['itemCode'] as String? ?? ''),
+    unitCode: j['unitCode'] as String?,
+    requiredPerSet: _toDouble(j['requiredPerSet']),
+  );
+}
+
+// Per-warehouse component balance row inside a SetWarehouseAvailability.
+class SetComponentBalance {
+  final String itemCode;
+  final double balanceQty;
+  final bool sufficient;
+  final double shortBy;
+
+  const SetComponentBalance({
+    required this.itemCode,
+    required this.balanceQty,
+    required this.sufficient,
+    required this.shortBy,
+  });
+
+  factory SetComponentBalance.fromJson(Map<String, dynamic> j) =>
+      SetComponentBalance(
+        itemCode: (j['itemCode'] as String?) ?? '',
+        balanceQty: _toDouble(j['balanceQty']),
+        sufficient: j['sufficient'] == true,
+        shortBy: _toDouble(j['shortBy']),
+      );
+}
+
+// How many whole sets one warehouse can build, plus per-component detail.
+// `status`: complete | incomplete | none.
+class SetWarehouseAvailability {
+  final String warehouseCode;
+  final String warehouseName;
+  final String status;
+  final double buildableSets;
+  final List<SetComponentBalance> components;
+
+  const SetWarehouseAvailability({
+    required this.warehouseCode,
+    required this.warehouseName,
+    required this.status,
+    required this.buildableSets,
+    this.components = const [],
+  });
+
+  bool get isComplete => status == 'complete';
+
+  factory SetWarehouseAvailability.fromJson(Map<String, dynamic> j) =>
+      SetWarehouseAvailability(
+        warehouseCode: (j['warehouseCode'] as String?) ?? '',
+        warehouseName:
+            (j['warehouseName'] as String?) ??
+            (j['warehouseCode'] as String? ?? ''),
+        status: (j['status'] as String?) ?? 'none',
+        buildableSets: _toDouble(j['buildableSets']),
+        components:
+            (j['components'] as List<dynamic>?)
+                ?.map(
+                  (e) => SetComponentBalance.fromJson(e as Map<String, dynamic>),
+                )
+                .toList() ??
+            const [],
+      );
+}
+
+// Full response of /api/products/{id}/set/availability.
+class SetAvailability {
+  final String productCode;
+  final List<SetComponent> components;
+  final List<SetWarehouseAvailability> warehouses;
+
+  const SetAvailability({
+    required this.productCode,
+    this.components = const [],
+    this.warehouses = const [],
+  });
+
+  factory SetAvailability.fromJson(Map<String, dynamic> j) => SetAvailability(
+    productCode: (j['productCode'] as String?) ?? '',
+    components:
+        (j['components'] as List<dynamic>?)
+            ?.map((e) => SetComponent.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    warehouses:
+        (j['warehouses'] as List<dynamic>?)
+            ?.map(
+              (e) =>
+                  SetWarehouseAvailability.fromJson(e as Map<String, dynamic>),
+            )
+            .toList() ??
+        const [],
+  );
+}
+
+// Row from /api/inventory/stock-locations — warehouse + location codes
+// with their display names (joined from ic_warehouse / ic_shelf) and the
+// balance, used by the warehouse picker right after a product is tapped.
+class StockLocationRow {
+  final String? warehouse;
+  final String? warehouseName;
+  final String? location;
+  final String? locationName;
+  final int balanceQty;
+
+  StockLocationRow({
+    this.warehouse,
+    this.warehouseName,
+    this.location,
+    this.locationName,
+    required this.balanceQty,
+  });
+
+  factory StockLocationRow.fromJson(Map<String, dynamic> j) => StockLocationRow(
+    warehouse: j['warehouse'] as String?,
+    warehouseName: j['warehouseName'] as String?,
+    location: j['location'] as String?,
+    locationName: j['locationName'] as String?,
+    balanceQty: (j['balanceQty'] as num?)?.toInt() ?? 0,
+  );
+}
+
 class StockBalance {
   final String code;
   final String? name;
@@ -753,6 +921,17 @@ class SaleOrder {
   final double total;
   final DateTime createdAt;
   final List<OrderItem> items;
+  // Bill-level warehouse (ic_trans.wh_from). Used as a fallback during
+  // edit prefill when a particular line doesn't carry its own wh_code.
+  final String? warehouseCode;
+  // Bill-level extras unpacked from ic_trans.remark by the server. All
+  // optional — older bills with just a free-text remark only fill in
+  // deliveryName.
+  final String? deliveryName;
+  final double extraDiscount;
+  final String? note;
+  // Settlement info — non-null once the cashier has received payment.
+  final SettlementInfo? settlement;
 
   SaleOrder({
     required this.id,
@@ -764,6 +943,11 @@ class SaleOrder {
     required this.total,
     required this.createdAt,
     required this.items,
+    this.warehouseCode,
+    this.deliveryName,
+    this.extraDiscount = 0,
+    this.note,
+    this.settlement,
   });
 
   factory SaleOrder.fromJson(Map<String, dynamic> j) => SaleOrder(
@@ -785,7 +969,58 @@ class SaleOrder {
             ?.map((e) => OrderItem.fromJson(e as Map<String, dynamic>))
             .toList() ??
         const [],
+    warehouseCode: (j['warehouseCode'] as String?)?.trim().isEmpty == true
+        ? null
+        : j['warehouseCode'] as String?,
+    deliveryName: (j['deliveryName'] as String?)?.trim().isEmpty == true
+        ? null
+        : j['deliveryName'] as String?,
+    extraDiscount: _toDouble(j['extraDiscount']),
+    note: (j['note'] as String?)?.trim().isEmpty == true
+        ? null
+        : j['note'] as String?,
+    settlement: j['settlement'] is Map<String, dynamic>
+        ? SettlementInfo.fromJson(j['settlement'] as Map<String, dynamic>)
+        : null,
   );
+}
+
+class SettlementInfo {
+  final String receiptNo;
+  final DateTime? settledAt;
+  final String? cashierName;
+  final double cashKip;
+  final double transferKip;
+  final double redeemedKip;
+
+  const SettlementInfo({
+    required this.receiptNo,
+    this.settledAt,
+    this.cashierName,
+    this.cashKip = 0,
+    this.transferKip = 0,
+    this.redeemedKip = 0,
+  });
+
+  factory SettlementInfo.fromJson(Map<String, dynamic> j) => SettlementInfo(
+    receiptNo: j['receiptNo'] as String? ?? '',
+    settledAt: DateTime.tryParse(j['settledAt']?.toString() ?? ''),
+    cashierName: (j['cashierName'] as String?)?.trim().isEmpty == true
+        ? null
+        : j['cashierName'] as String?,
+    cashKip: _toDouble(j['cashKip']),
+    transferKip: _toDouble(j['transferKip']),
+    redeemedKip: _toDouble(j['redeemedKip']),
+  );
+
+  // Payment-method label derived from which splits are non-zero.
+  String get paymentTypeLabel {
+    final parts = <String>[];
+    if (cashKip > 0) parts.add('ເງິນສົດ');
+    if (transferKip > 0) parts.add('ໂອນ');
+    if (redeemedKip > 0) parts.add('ແລກແຕ້ມ');
+    return parts.isEmpty ? '—' : parts.join(' + ');
+  }
 }
 
 class Promotion {

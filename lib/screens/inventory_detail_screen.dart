@@ -48,10 +48,9 @@ class _InventoryDetailScreenState extends State<InventoryDetailScreen> {
     try {
       final api = AppScope.of(context).api;
       final code = widget.item.code;
-      final result = await api.fetchStockBalance(
-        [code],
-        warehouses: _isSales ? widget.salesWarehouses : null,
-      );
+      final result = await api.fetchStockBalance([
+        code,
+      ], warehouses: _isSales ? widget.salesWarehouses : null);
       if (!mounted) return;
       setState(() {
         _balance = result.isEmpty ? null : result.first;
@@ -71,32 +70,55 @@ class _InventoryDetailScreenState extends State<InventoryDetailScreen> {
   }
 
   String _balanceLabel(double v) {
-    if (v <= 0) return 'Out';
-    if (v <= 5) return 'Low';
-    return 'In stock';
+    if (v <= 0) return 'ໝົດແລ້ວ';
+    if (v <= 5) return 'ໃກ້ໝົດ';
+    return 'ພ້ອມຂາຍ';
   }
 
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.bg,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppColors.primary,
         elevation: 0,
-        scrolledUnderElevation: 0,
-        title: Text(
+        foregroundColor: Colors.white,
+        titleSpacing: 0,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: kSpace3),
+          child: IconButton(
+            tooltip: 'ກັບຄືນ',
+            onPressed: () => Navigator.of(context).maybePop(),
+            icon: const Icon(Icons.arrow_back_rounded),
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white.withValues(alpha: 0.14),
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ),
+        title: const Text(
           'ລາຍລະອຽດສິນຄ້າ',
           style: TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w800,
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 18,
           ),
         ),
         actions: [
-          IconButton(
-            tooltip: 'ໂຫຼດໃໝ່',
-            onPressed: _loading ? null : _load,
-            icon: Icon(Icons.refresh, color: AppColors.gold),
+          Padding(
+            padding: const EdgeInsets.only(right: kSpace3),
+            child: IconButton(
+              tooltip: 'ໂຫຼດໃໝ່',
+              onPressed: _loading ? null : _load,
+              icon: const Icon(Icons.refresh_rounded),
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.white.withValues(alpha: 0.14),
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.white.withValues(alpha: 0.08),
+                disabledForegroundColor: Colors.white.withValues(alpha: 0.45),
+              ),
+            ),
           ),
         ],
       ),
@@ -104,19 +126,18 @@ class _InventoryDetailScreenState extends State<InventoryDetailScreen> {
         child: FadeInSlide(
           duration: const Duration(milliseconds: 500),
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+            padding: const EdgeInsets.fromLTRB(
+              kSpace4,
+              kSpace3,
+              kSpace4,
+              kSpace6,
+            ),
             children: [
-          _sectionLabel('PRODUCT'),
-          const SizedBox(height: 8),
-          _ProductCard(item: item, isSales: _isSales),
-          const SizedBox(height: 18),
-          _sectionLabel('STOCK'),
-          const SizedBox(height: 8),
-          _buildBalanceSection(),
-          const SizedBox(height: 18),
-          _sectionLabel('DETAILS'),
-          const SizedBox(height: 8),
-          _DetailsCard(item: item, fmt: _fmt),
+              _ProductHero(item: item, isSales: _isSales),
+              const SizedBox(height: kSpace3),
+              _buildBalanceSection(),
+              const SizedBox(height: kSpace3),
+              _DetailsCard(item: item, fmt: _fmt),
             ],
           ),
         ),
@@ -124,37 +145,12 @@ class _InventoryDetailScreenState extends State<InventoryDetailScreen> {
     );
   }
 
-  Widget _sectionLabel(String text) {
-    return Row(
-      children: [
-        Container(
-          width: 4,
-          height: 4,
-          decoration: BoxDecoration(
-            color: AppColors.gold,
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          text,
-          style: TextStyle(
-            color: AppColors.gold,
-            fontWeight: FontWeight.w800,
-            fontSize: 11,
-            letterSpacing: 1.6,
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildBalanceSection() {
     if (_loading) {
       return _Card(
-        child: Padding(
-          padding: EdgeInsets.all(28),
-          child: Center(child: CircularProgressIndicator(color: AppColors.gold)),
+        child: const Padding(
+          padding: EdgeInsets.all(kSpace6),
+          child: Center(child: BrandedSpinner(label: 'ກຳລັງໂຫຼດສະຕັອກ…')),
         ),
       );
     }
@@ -181,10 +177,7 @@ class _InventoryDetailScreenState extends State<InventoryDetailScreen> {
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
               ),
               const SizedBox(height: 12),
               FilledButton.icon(
@@ -236,76 +229,91 @@ class _Card extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassCard(
-      radius: 14,
+    return SurfaceCard(
+      radius: kRadiusMd,
       padding: EdgeInsets.zero,
       child: child,
     );
   }
 }
 
-class _ProductCard extends StatelessWidget {
-  const _ProductCard({required this.item, required this.isSales});
+class _ProductHero extends StatelessWidget {
+  const _ProductHero({required this.item, required this.isSales});
   final InventoryItem item;
   final bool isSales;
 
   @override
   Widget build(BuildContext context) {
-    return GlassCard(
-      radius: 14,
-      padding: const EdgeInsets.all(18),
+    final initial = item.nameLo.trim().isEmpty ? '?' : item.nameLo.trim()[0];
+
+    return Container(
+      padding: const EdgeInsets.all(kSpace4),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(kRadiusLg),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(
+              alpha: ThemeService.isDark ? 0.18 : 0.22,
+            ),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 52,
+                height: 52,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(11),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppColors.goldBright, AppColors.gold],
+                  borderRadius: BorderRadius.circular(kRadiusMd),
+                  color: Colors.white.withValues(alpha: 0.14),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.16),
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.gold.withValues(alpha: 0.3),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
                 ),
-                child: Icon(
-                  Icons.inventory_2,
-                  size: 20,
-                  color: AppColors.bg,
+                alignment: Alignment.center,
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: kSpace3),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       item.nameLo,
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
+                      style: const TextStyle(
+                        color: Colors.white,
                         fontWeight: FontWeight.w900,
                         fontSize: 17,
                         height: 1.25,
                       ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     if (item.nameEng != null && item.nameEng!.isNotEmpty) ...[
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 4),
                       Text(
                         item.nameEng!,
                         style: TextStyle(
-                          color: AppColors.textMuted,
+                          color: Colors.white.withValues(alpha: 0.72),
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ],
@@ -313,33 +321,58 @@ class _ProductCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          Row(
+          const SizedBox(height: kSpace4),
+          Wrap(
+            spacing: kSpace2,
+            runSpacing: kSpace2,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
+              _HeroChip(icon: Icons.tag_rounded, label: item.code),
+              if (item.brandName != null && item.brandName!.isNotEmpty)
+                _HeroChip(
+                  icon: Icons.local_offer_rounded,
+                  label: item.brandName!,
                 ),
-                decoration: BoxDecoration(
-                  color: AppColors.bg,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Text(
-                  item.code,
-                  style: TextStyle(
-                    color: AppColors.gold,
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
               _ScopeBadge(isSales: isSales),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroChip extends StatelessWidget {
+  const _HeroChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(kRadiusPill),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white.withValues(alpha: 0.78), size: 14),
+          const SizedBox(width: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 180),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+              ),
+            ),
           ),
         ],
       ),
@@ -353,29 +386,27 @@ class _ScopeBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isSales ? AppColors.gold : AppColors.info;
-    final icon = isSales
-        ? Icons.storefront_outlined
-        : Icons.business_outlined;
+    final color = isSales ? AppColors.warning : AppColors.info;
+    final icon = isSales ? Icons.storefront_outlined : Icons.business_outlined;
     final label = isSales ? 'ຂາຍ' : 'ບໍລິສັດ';
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(kRadiusPill),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 13, color: color),
-          const SizedBox(width: 5),
+          const SizedBox(width: 6),
           Text(
             label,
             style: TextStyle(
-              color: color,
+              color: Colors.white,
               fontWeight: FontWeight.w800,
-              fontSize: 11,
+              fontSize: 12,
             ),
           ),
         ],
@@ -410,22 +441,22 @@ class _BalanceCard extends StatelessWidget {
     final qty = balance?.balanceQty ?? 0;
     final color = balanceColor(qty);
     final label = balanceLabel(qty);
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.cardElev, AppColors.gold.withValues(alpha: 0.06)],
-        ),
-      ),
+    return SurfaceCard(
+      padding: const EdgeInsets.all(kSpace4),
+      radius: kRadiusMd,
+      accent: color,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              IconBubble(
+                icon: Icons.warehouse_rounded,
+                color: color,
+                size: BubbleSize.sm,
+              ),
+              const SizedBox(width: kSpace3),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -434,8 +465,8 @@ class _BalanceCard extends StatelessWidget {
                       title,
                       style: TextStyle(
                         color: AppColors.textPrimary,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
                       ),
                     ),
                     const SizedBox(height: 3),
@@ -452,71 +483,86 @@ class _BalanceCard extends StatelessWidget {
               if (balance != null) _StatusBadge(color: color, label: label),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: kSpace4),
           if (balance == null)
-            Text(
-              'ບໍ່ມີຂໍ້ມູນ',
-              style: TextStyle(color: AppColors.textMuted),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(kSpace3),
+              decoration: BoxDecoration(
+                color: AppColors.bg.withValues(
+                  alpha: ThemeService.isDark ? 0.30 : 0.72,
+                ),
+                borderRadius: BorderRadius.circular(kRadiusMd),
+              ),
+              child: Text(
+                'ບໍ່ມີຂໍ້ມູນ',
+                style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             )
           else ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Text(
-                  qtyFmt.format(qty),
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 34,
-                    height: 1,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  balance!.unitCode ?? unitFallback ?? '',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-            if (balance!.locations.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Container(height: 1, color: AppColors.divider),
-              const SizedBox(height: 14),
-              Row(
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(kSpace3),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(kRadiusMd),
+                border: Border.all(color: color.withValues(alpha: 0.16)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Container(
-                    width: 4,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.gold,
-                      shape: BoxShape.circle,
+                  Expanded(
+                    child: Text(
+                      qtyFmt.format(qty),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 34,
+                        height: 1,
+                        fontFeatures: kTabularFigures,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: kSpace2),
+                  Text(
+                    balance!.unitCode ?? unitFallback ?? '',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (balance!.locations.isNotEmpty) ...[
+              const SizedBox(height: kSpace4),
+              Row(
+                children: [
+                  Icon(Icons.place_rounded, color: AppColors.primary, size: 16),
+                  const SizedBox(width: kSpace2),
                   Text(
                     isSales
                         ? 'ບ່ອນຈັດເກັບ (ສາງຂາຍ)'
                         : 'ບ່ອນຈັດເກັບ · ${balance!.locations.length}',
                     style: TextStyle(
-                      color: AppColors.gold,
-                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w900,
                       fontSize: 11,
-                      letterSpacing: 1.4,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: kSpace2),
               for (int i = 0; i < balance!.locations.length; i++)
                 Padding(
                   padding: EdgeInsets.only(
-                    bottom: i == balance!.locations.length - 1 ? 0 : 8,
+                    bottom: i == balance!.locations.length - 1 ? 0 : kSpace2,
                   ),
                   child: _LocationRow(
                     loc: balance!.locations[i],
@@ -555,24 +601,26 @@ class _LocationRow extends StatelessWidget {
     final color = balanceColor(loc.balanceQty);
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(kSpace3),
       decoration: BoxDecoration(
-        color: AppColors.bg,
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(10),
+        color: AppColors.bg.withValues(
+          alpha: ThemeService.isDark ? 0.30 : 0.72,
+        ),
+        borderRadius: BorderRadius.circular(kRadiusMd),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 4,
+            width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(2),
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(kRadiusSm),
             ),
+            child: Icon(Icons.inventory_rounded, color: color, size: 17),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: kSpace3),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -581,22 +629,23 @@ class _LocationRow extends StatelessWidget {
                   warehouse.isEmpty ? 'ບໍ່ລະບຸສາງ' : warehouse,
                   style: TextStyle(
                     color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w900,
                     fontSize: 13,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
                 Text(
                   location.isEmpty ? 'ບໍ່ລະບຸບ່ອນຈັດເກັບ' : location,
-                  style: TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 11,
-                  ),
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: kSpace2),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -606,6 +655,7 @@ class _LocationRow extends StatelessWidget {
                   color: color,
                   fontWeight: FontWeight.w900,
                   fontSize: 15,
+                  fontFeatures: kTabularFigures,
                 ),
               ),
               if (loc.unitCode != null && loc.unitCode!.isNotEmpty) ...[
@@ -635,11 +685,10 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(4),
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(kRadiusPill),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -654,9 +703,8 @@ class _StatusBadge extends StatelessWidget {
             label,
             style: TextStyle(
               color: color,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w900,
               fontSize: 10,
-              letterSpacing: 0.3,
             ),
           ),
         ],
@@ -692,54 +740,89 @@ class _DetailsCard extends StatelessWidget {
       ),
       _Kv(
         'ສະຖານະ',
-        item.itemStatus == 0
-            ? 'ໃຊ້ງານ'
-            : (item.itemStatus?.toString()),
+        item.itemStatus == 0 ? 'ໃຊ້ງານ' : (item.itemStatus?.toString()),
       ),
     ];
 
-    return _Card(
+    return SurfaceCard(
+      padding: EdgeInsets.zero,
+      radius: kRadiusMd,
       child: Column(
-        children: List.generate(rows.length, (i) {
-          final r = rows[i];
-          final isLast = i == rows.length - 1;
-          return Container(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: isLast ? Colors.transparent : AppColors.divider,
-                ),
-              ),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              kSpace4,
+              kSpace4,
+              kSpace4,
+              kSpace2,
             ),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  width: 110,
-                  child: Text(
-                    r.key,
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                IconBubble(
+                  icon: Icons.list_alt_rounded,
+                  color: AppColors.info,
+                  size: BubbleSize.sm,
                 ),
-                Expanded(
-                  child: Text(
-                    (r.value == null || r.value!.isEmpty) ? '—' : r.value!,
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
+                const SizedBox(width: kSpace3),
+                Text(
+                  'ຂໍ້ມູນສິນຄ້າ',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ],
             ),
-          );
-        }),
+          ),
+          ...List.generate(rows.length, (i) {
+            final r = rows[i];
+            final isLast = i == rows.length - 1;
+            return Container(
+              padding: const EdgeInsets.fromLTRB(
+                kSpace4,
+                kSpace3,
+                kSpace4,
+                kSpace3,
+              ),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: isLast ? Colors.transparent : AppColors.divider,
+                  ),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 112,
+                    child: Text(
+                      r.key,
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      (r.value == null || r.value!.isEmpty) ? '—' : r.value!,
+                      textAlign: TextAlign.end,
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
       ),
     );
   }

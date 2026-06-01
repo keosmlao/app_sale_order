@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import '../config.dart';
 import '../models/models.dart';
@@ -262,12 +263,16 @@ class ApiClient {
         int quantity,
         String? warehouseCode,
         String? locationCode,
+        String? salespersonCode,
       })
     >
     items,
     // Inline cart-bound price requests now only carry product + reason;
     // the manager fills in the approved price when they decide.
     List<({String productId, String? reason})> priceRequests = const [],
+    // Per-item promotion choice: itemCode → promoId, or null to opt out.
+    // Absent entries fall back to the server's default promo application.
+    Map<String, String?> promoSelections = const {},
   }) async {
     final res = await _post(
       _uri('/api/orders'),
@@ -292,6 +297,9 @@ class ApiClient {
                   'warehouseCode': i.warehouseCode!.trim(),
                 if (i.locationCode != null && i.locationCode!.trim().isNotEmpty)
                   'locationCode': i.locationCode!.trim(),
+                if (i.salespersonCode != null &&
+                    i.salespersonCode!.trim().isNotEmpty)
+                  'salespersonCode': i.salespersonCode!.trim(),
               },
             )
             .toList(),
@@ -305,6 +313,7 @@ class ApiClient {
                 },
               )
               .toList(),
+        if (promoSelections.isNotEmpty) 'promoSelections': promoSelections,
       }),
     );
     return SaleOrder.fromJson(_decode(res) as Map<String, dynamic>);
@@ -466,6 +475,18 @@ class ApiClient {
   // DELIVERING → DELIVERED, plus cancel/reopen branches for PENDING ↔
   // CANCELLED. `reason` is required server-side for cancel; optional
   // everywhere else.
+  // Hard-deletes a PENDING (or unsettled) order. Removes both the
+  // ic_trans header and ic_trans_detail lines server-side — used by the
+  // "ລົບ Order" button and by the edit-by-replacement flow once the
+  // replacement bill has posted successfully.
+  Future<void> deleteOrder(String orderId) async {
+    final res = await _delete(
+      _uri('/api/cashier/orders/$orderId'),
+      headers: _headers(),
+    );
+    _decode(res);
+  }
+
   Future<SaleOrder> updateOrderStatus({
     required String orderId,
     required String
@@ -609,23 +630,100 @@ class ApiClient {
         .toList();
   }
 
-  Future<List<Promotion>> fetchActivePromotions() async {
+  // Per-warehouse buildability for a set product (mirrors the web POS
+  // set-build modal). Stock is checked component-by-component at the
+  // warehouse level since the cashier doesn't pick a shelf location for a
+  // set — the server explodes it into components at settle time.
+  Future<SetAvailability> fetchSetAvailability(String productCode) async {
     final res = await _get(
-      _uri('/api/promotions/active'),
+      _uri(
+        '/api/products/${Uri.encodeComponent(productCode)}/set/availability',
+      ),
       headers: _headers(),
     );
-    final data = _decode(res) as List<dynamic>;
-    return data
-        .map((e) => Promotion.fromJson(e as Map<String, dynamic>))
+    final data = _decode(res) as Map<String, dynamic>;
+    return SetAvailability.fromJson(data);
+  }
+
+  Future<List<Promotion>> fetchActivePromotions() async {
+    final uri = _uri('/api/promotions/active');
+    final hdrs = _headers();
+    debugPrint('[Promo] API Request: GET $uri headers=$hdrs');
+    try {
+      final res = await _get(uri, headers: hdrs);
+      debugPrint('[Promo] API Response status=${res.statusCode} body=${res.body}');
+      final data = _decode(res) as List<dynamic>;
+      return data
+          .map((e) => Promotion.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('[Promo] API Exception: $e');
+      rethrow;
+    }
+  }
+
+  // Fetch a single product by exact code — backs the BOGO bonus auto-add
+  // path. Unlike `searchInventory`, this endpoint does NOT filter on
+  // balance_qty > 0, so a promo bonus that's temporarily out of stock
+  // still resolves and the cashier sees the linked bonus line. Returns
+  // null when the SKU genuinely doesn't exist (404).
+  Future<InventoryItem?> fetchProductByCode(String code) async {
+    final res = await _get(
+      _uri('/api/products/${Uri.encodeComponent(code)}'),
+      headers: _headers(),
+    );
+    if (res.statusCode == 404) return null;
+    final raw = _decode(res) as Map<String, dynamic>;
+    // The /api/products/[id] route returns the web-shaped Product
+    // (name/description/price/stock) rather than the InventoryItem
+    // contract used elsewhere in the app. Re-key so InventoryItem
+    // .fromJson finds what it expects.
+    final mapped = <String, dynamic>{
+      'code': raw['code'] ?? code,
+      'nameLo': raw['name'],
+      'nameEng': raw['description'],
+      'unitName': raw['unitName'],
+      'brand': raw['brand'],
+      'brandName': raw['brandName'],
+      'category': raw['category'],
+      'categoryName': raw['categoryName'],
+      'groupMain': raw['groupMain'],
+      'groupMainName': raw['groupMainName'],
+      'hasSet': raw['hasSet'] == true,
+      'status': raw['status'],
+      'itemStatus': raw['itemStatus'],
+      'companyBalance': raw['stock'] ?? 0,
+      'salesBalance': raw['stock'] ?? 0,
+      'salePriceKip': raw['price'] ?? 0,
+    };
+    return InventoryItem.fromJson(mapped);
+  }
+
+  // Lean warehouse+location breakdown for a single item. Fires after the
+  // user picks a product so the warehouse picker has fresh stock data —
+  // smaller payload + faster query than `fetchStockBalance`.
+  Future<List<StockLocationRow>> fetchStockLocations(String code) async {
+    final res = await _get(
+      _uri('/api/inventory/stock-locations', {'code': code}),
+      headers: _headers(),
+    );
+    final data = _decode(res) as Map<String, dynamic>;
+    return ((data['locations'] as List<dynamic>?) ?? const [])
+        .map((e) => StockLocationRow.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
   Future<List<InventoryItem>> searchInventory(
     String q, {
     int limit = 10,
+    bool includeSets = false,
   }) async {
     final res = await _get(
-      _uri('/api/inventory/search', {'q': q, 'limit': limit.toString()}),
+      _uri('/api/inventory/search', {
+        'q': q,
+        'limit': limit.toString(),
+        if (includeSets) 'sets': '1',
+      }),
       headers: _headers(),
     );
     final data = _decode(res) as List<dynamic>;

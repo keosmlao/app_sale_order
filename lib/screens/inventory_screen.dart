@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../app_scope.dart';
 import '../app_theme.dart';
 import '../models/models.dart';
 import '../services/inventory_cache.dart';
+import '../services/promotions_engine.dart';
 import 'inventory_detail_screen.dart';
+import '../components/ui_components.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -13,33 +17,53 @@ class InventoryScreen extends StatefulWidget {
   State<InventoryScreen> createState() => _InventoryScreenState();
 }
 
-enum _StockFilter { all, inStock, lowStock, outOfStock }
-
 class _InventoryScreenState extends State<InventoryScreen> {
-  static const int _initialVisibleCount = 30;
-  static const int _loadMoreCount = 30;
+  static const int _initialFetchLimit = 20;
+  static const int _loadMoreStep = 10;
+  static const int _maxLimit = 200;
 
-  final _fmt = NumberFormat('#,###', 'en_US');
   final _qtyFmt = NumberFormat('#,###.##', 'en_US');
-  final _dateFmt = DateFormat('HH:mm');
-  final _cache = InventoryCache();
+  final _priceFmt = NumberFormat('#,###', 'en_US');
   final _scrollController = ScrollController();
   final _searchCtl = TextEditingController();
 
   List<InventoryItem> _items = const [];
   List<String> _salesWarehouses = const [];
-  DateTime? _syncedAt;
+  List<Promotion> _activePromos = const [];
   bool _loading = false;
-  bool _syncing = false;
+  bool _loadingMore = false;
   String? _error;
   String _query = '';
-  _StockFilter _stockFilter = _StockFilter.all;
-  InventoryScope _scope = InventoryScope.company;
+
+  Promotion? _activePromoForProduct(String code) {
+    if (_activePromos.isEmpty) return null;
+    final now = DateTime.now();
+    final trimmed = code.trim();
+    for (final p in _activePromos) {
+      if (!isPromoActiveNow(p, now)) continue;
+      if (p.triggerItemCode?.trim() == trimmed) return p;
+    }
+    return null;
+  }
+
+  final InventoryScope _scope = InventoryScope.company;
   bool _booted = false;
-  int _visibleCount = _initialVisibleCount;
+  int _currentLimit = _initialFetchLimit;
+  bool _hasMore = true;
+  Timer? _searchDebounce;
+  int _searchSeq = 0;
+
+  void _onSearchChanged(String v) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 280), () {
+      if (!mounted) return;
+      _runSearch(v);
+    });
+  }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _scrollController.dispose();
     _searchCtl.dispose();
     super.dispose();
@@ -55,164 +79,79 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _boot() async {
-    setState(() => _loading = true);
-    final snap = await _cache.read();
+    final api = AppScope.of(context).api;
+    final snap = await InventoryCache().read();
     if (mounted && snap != null && !snap.isEmpty) {
       setState(() {
-        _items = snap.items;
+        _items = snap.items.take(_initialFetchLimit).toList();
         _salesWarehouses = snap.salesWarehouses;
-        _syncedAt = snap.syncedAt;
         _loading = false;
-        _visibleCount = _initialVisibleCount;
       });
-      return;
+    } else {
+      setState(() => _loading = true);
     }
-    if (mounted) setState(() => _loading = false);
+
+    try {
+      final promos = await api.fetchActivePromotions();
+      if (mounted) setState(() => _activePromos = promos);
+    } catch (e) {
+      debugPrint('InventoryScreen: failed to fetch promotions -> $e');
+    }
+
+    await _runSearch('');
   }
 
-  Future<void> _sync({bool showMessage = false}) async {
+  Future<void> _runSearch(String q) async {
+    final seq = ++_searchSeq;
     setState(() {
-      _syncing = true;
+      _query = q;
+      _currentLimit = _initialFetchLimit;
       _error = null;
+      _hasMore = true;
+      _loading = _items.isEmpty;
     });
     try {
       final api = AppScope.of(context).api;
-      final results = await Future.wait([
-        api.fetchInventory(),
-        api.fetchSalesBalances(),
-        api.fetchCompanyBalances(),
-      ]);
-      final inv =
-          results[0]
-              as ({
-                DateTime syncedAt,
-                List<InventoryItem> items,
-                List<String> salesWarehouses,
-              });
-      final sales =
-          results[1]
-              as ({
-                Map<String, double> balanceByCode,
-                Map<String, double> minimumByCode,
-                List<String> warehouses,
-              });
-      final company = results[2] as Map<String, double>;
-      final merged = inv.items
-          .map(
-            (p) => p.copyWith(
-              resetCompanyBalance: true,
-              companyBalance: company[p.code] ?? 0,
-              salesBalance: sales.balanceByCode[p.code] ?? 0,
-              salesMinimumStock:
-                  sales.minimumByCode[p.code] ?? p.salesMinimumStock,
-            ),
-          )
-          .toList();
-      await _cache.write(
-        InventorySnapshot(
-          syncedAt: inv.syncedAt,
-          items: merged,
-          salesWarehouses: inv.salesWarehouses,
-        ),
-      );
-      if (!mounted) return;
+      final rows = await api
+          .searchInventory(q.trim(), limit: _initialFetchLimit)
+          .timeout(const Duration(seconds: 15));
+      if (seq != _searchSeq || !mounted) return;
       setState(() {
-        _items = merged;
-        _salesWarehouses = inv.salesWarehouses;
-        _syncedAt = inv.syncedAt;
-        _visibleCount = _initialVisibleCount;
+        _items = rows;
+        _hasMore = rows.length >= _initialFetchLimit;
+        _loading = false;
       });
-      if (showMessage) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ດຶງ stock ແລະບັນທຶກໃນເຄື່ອງແລ້ວ')),
-        );
-      }
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.toString());
-      if (showMessage) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('ດຶງ stock ບໍ່ສຳເລັດ: $e')));
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _syncing = false;
-          _loading = false;
-        });
-      }
+      if (seq != _searchSeq || !mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
     }
   }
 
-  List<InventoryItem> get _scopedItems {
-    if (_scope == InventoryScope.sales) {
-      return _items.where((p) => p.balanceFor(_scope) > 0).toList();
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore || _loading) return;
+    if (_currentLimit >= _maxLimit) return;
+    final nextLimit = (_currentLimit + _loadMoreStep).clamp(0, _maxLimit);
+    setState(() => _loadingMore = true);
+    final seq = _searchSeq;
+    try {
+      final api = AppScope.of(context).api;
+      final rows = await api
+          .searchInventory(_query.trim(), limit: nextLimit)
+          .timeout(const Duration(seconds: 15));
+      if (seq != _searchSeq || !mounted) return;
+      setState(() {
+        _items = rows;
+        _currentLimit = nextLimit;
+        _hasMore = rows.length >= nextLimit && nextLimit < _maxLimit;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingMore = false);
     }
-    return _items;
-  }
-
-  _StockStats get _stats {
-    int inStock = 0, lowStock = 0, outOfStock = 0;
-    for (final p in _scopedItems) {
-      final b = p.balanceFor(_scope);
-      if (b <= 0) {
-        outOfStock++;
-      } else if (_isLowStock(p, b)) {
-        lowStock++;
-      } else {
-        inStock++;
-      }
-    }
-    return _StockStats(
-      total: _scopedItems.length,
-      inStock: inStock,
-      lowStock: lowStock,
-      outOfStock: outOfStock,
-    );
-  }
-
-  List<InventoryItem> get _filtered {
-    final q = _query.trim().toLowerCase();
-    return _scopedItems.where((p) {
-      final bal = p.balanceFor(_scope);
-      switch (_stockFilter) {
-        case _StockFilter.all:
-          break;
-        case _StockFilter.inStock:
-          if (bal <= 0 || _isLowStock(p, bal)) return false;
-          break;
-        case _StockFilter.lowStock:
-          if (bal <= 0 || !_isLowStock(p, bal)) return false;
-          break;
-        case _StockFilter.outOfStock:
-          if (bal > 0) return false;
-          break;
-      }
-      if (q.isEmpty) return true;
-      return p.nameLo.toLowerCase().contains(q) ||
-          p.code.toLowerCase().contains(q) ||
-          (p.nameEng ?? '').toLowerCase().contains(q) ||
-          (p.brand ?? '').toLowerCase().contains(q) ||
-          (p.brandName ?? '').toLowerCase().contains(q);
-    }).toList();
-  }
-
-  void _resetVisibleCount() {
-    _visibleCount = _initialVisibleCount;
-    if (_scrollController.hasClients) {
-      _scrollController.jumpTo(0);
-    }
-  }
-
-  void _loadMore() {
-    if (_loading) return;
-    final total = _filtered.length;
-    if (_visibleCount >= total) return;
-    setState(() {
-      final next = _visibleCount + _loadMoreCount;
-      _visibleCount = next > total ? total : next;
-    });
   }
 
   bool _onScroll(ScrollNotification n) {
@@ -220,33 +159,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     return false;
   }
 
-  Color _stockColor(double b) {
-    if (b <= 0) return AppColors.danger;
-    return AppColors.success;
-  }
-
-  bool _isLowStock(InventoryItem item, double balance) {
-    final min = item.salesMinimumStock;
-    if (min > 0) return balance < min;
-    return balance <= 5;
-  }
-
-  Color _stockColorForItem(InventoryItem item, double b) {
-    if (b <= 0) return AppColors.danger;
-    if (_isLowStock(item, b)) return AppColors.warning;
-    return AppColors.success;
-  }
-
-  String _stockLabelForItem(InventoryItem item, double b) {
-    if (b <= 0) return 'Out';
-    if (_isLowStock(item, b)) return 'Low';
-    return 'In stock';
-  }
-
-  String _qtyText(double v) {
-    if (v == v.toInt()) return v.toInt().toString();
-    return _qtyFmt.format(v);
-  }
+  Future<void> _pullRefresh() => _runSearch(_query);
 
   void _openDetail(InventoryItem item) {
     Navigator.of(context).push(
@@ -260,318 +173,201 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
+  ({int total, int available, int low, int out}) _stockSummary() {
+    final lowStockCount = _items
+        .where((i) => i.companyBalance > 0 && i.companyBalance <= i.salesMinimumStock)
+        .length;
+    final outOfStockCount = _items.where((i) => i.companyBalance <= 0).length;
+    final availableCount = _items.where((i) => i.companyBalance > i.salesMinimumStock).length;
+    return (
+      total: _items.length,
+      available: availableCount,
+      low: lowStockCount,
+      out: outOfStockCount,
+    );
+  }
+
+  Widget _buildInventoryHeader() {
+    final summary = _stockSummary();
+    return Container(
+      margin: const EdgeInsets.fromLTRB(kSpace4, kSpace3, kSpace4, kSpace2),
+      padding: const EdgeInsets.all(kSpace4),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(kRadiusLg),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: ThemeService.isDark ? 0.18 : 0.22),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(kRadiusMd),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+                ),
+                child: const Icon(Icons.inventory_2_rounded, color: Colors.white, size: 23),
+              ),
+              const SizedBox(width: kSpace3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'ສິນຄ້າຄົງເຫຼືອ',
+                      style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'ກວດສອບຈຳນວນ, ລາຄາ ແລະ ສະຖານةສະຕັອກ',
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.78), fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: kSpace4),
+          Row(
+            children: [
+              Expanded(child: _InventoryStatTile(label: 'ທັງໝົດ', value: summary.total.toString(), color: Colors.white)),
+              const SizedBox(width: kSpace2),
+              Expanded(child: _InventoryStatTile(label: 'ພ້ອມຂາຍ', value: summary.available.toString(), color: AppColors.success)),
+            ],
+          ),
+          const SizedBox(height: kSpace2),
+          Row(
+            children: [
+              Expanded(child: _InventoryStatTile(label: 'ໃກ້ໝົດ', value: summary.low.toString(), color: AppColors.warning)),
+              const SizedBox(width: kSpace2),
+              Expanded(child: _InventoryStatTile(label: 'ໝົດແລ້ວ', value: summary.out.toString(), color: AppColors.danger)),
+            ],
+          ),
+          const SizedBox(height: kSpace3),
+          Container(
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(kRadiusMd)),
+            child: SearchField(
+              controller: _searchCtl,
+              hint: 'ຄົ້ນຫາ ຊື່ / ລະຫັດ / ຍີ່ຫໍ້…',
+              onChanged: _onSearchChanged,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.bg,
       body: RefreshIndicator(
-        color: AppColors.gold,
+        color: AppColors.primary,
         backgroundColor: AppColors.cardBg,
-        onRefresh: _sync,
+        onRefresh: _pullRefresh,
         child: TabletConstrain(maxWidth: 900, child: _buildBody()),
       ),
     );
   }
 
   Widget _buildBody() {
-    if (_loading) {
-      return Center(
-        child: CircularProgressIndicator(color: AppColors.gold),
-      );
+    if (_loading && _items.isEmpty) {
+      return const BrandedSpinner(label: 'ກຳລັງໂຫຼດສິນຄ້າ…');
     }
     if (_error != null && _items.isEmpty) {
       return ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(kSpace5),
         children: [
           const SizedBox(height: 60),
-          _ErrorCard(message: _error!, onRetry: _sync),
+          _ErrorCard(message: _error!, onRetry: () => _runSearch(_query)),
         ],
       );
     }
 
-    final list = _filtered;
-    final visibleCount = _visibleCount > list.length
-        ? list.length
-        : _visibleCount;
-    final visibleList = list.take(visibleCount).toList();
-    final hasMore = visibleCount < list.length;
-    final stats = _stats;
-
-    return NotificationListener<ScrollNotification>(
-      onNotification: _onScroll,
-      child: CustomScrollView(
-        controller: _scrollController,
-        slivers: [
-          SliverToBoxAdapter(
-            child: _HeroCard(
-              scope: _scope,
-              stats: stats,
-              syncedAt: _syncedAt,
-              syncing: _syncing,
-              dateFmt: _dateFmt,
-              fmt: _fmt,
-              onSync: _syncing ? null : () => _sync(showMessage: true),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: _ScopePicker(
-                scope: _scope,
-                salesWarehouses: _salesWarehouses,
-                onChanged: (s) => setState(() {
-                  _scope = s;
-                  _stockFilter = _StockFilter.all;
-                  _resetVisibleCount();
-                }),
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: _FilterBar(
-              stockFilter: _stockFilter,
-              stats: stats,
-              fmt: _fmt,
-              onFilterChanged: (f) => setState(() {
-                _stockFilter = f;
-                _resetVisibleCount();
-              }),
-              stockColorFor: _stockColor,
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-              child: _SearchField(
-                controller: _searchCtl,
-                onChanged: (v) => setState(() {
-                  _query = v;
-                  _resetVisibleCount();
-                }),
-              ),
-            ),
-          ),
-          if (list.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: _EmptyView(
-                hasQuery: _query.isNotEmpty,
-                onClear: () {
-                  _searchCtl.clear();
-                  setState(() {
-                    _query = '';
-                    _stockFilter = _StockFilter.all;
-                    _resetVisibleCount();
-                  });
-                },
-              ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
-              sliver: SliverToBoxAdapter(
-                child: _InventoryListCard(
-                  items: visibleList,
-                  scope: _scope,
-                  fmt: _qtyFmt,
-                  stockColorFor: _stockColorForItem,
-                  stockLabelFor: _stockLabelForItem,
-                  qtyTextFor: _qtyText,
-                  hasMore: hasMore,
-                  remaining: list.length - visibleCount,
-                  onLoadMore: _loadMore,
-                  remainingFmt: _fmt,
-                  onTap: _openDetail,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StockStats {
-  const _StockStats({
-    required this.total,
-    required this.inStock,
-    required this.lowStock,
-    required this.outOfStock,
-  });
-  final int total;
-  final int inStock;
-  final int lowStock;
-  final int outOfStock;
-}
-
-class _HeroCard extends StatelessWidget {
-  const _HeroCard({
-    required this.scope,
-    required this.stats,
-    required this.syncedAt,
-    required this.syncing,
-    required this.dateFmt,
-    required this.fmt,
-    required this.onSync,
-  });
-
-  final InventoryScope scope;
-  final _StockStats stats;
-  final DateTime? syncedAt;
-  final bool syncing;
-  final DateFormat dateFmt;
-  final NumberFormat fmt;
-  final VoidCallback? onSync;
-
-  @override
-  Widget build(BuildContext context) {
-    final isCompany = scope == InventoryScope.company;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-      child: FadeInSlide(
-        duration: const Duration(milliseconds: 400),
-        child: GlassCard(
-          padding: const EdgeInsets.all(20),
-          radius: kRadiusLg,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        isCompany ? 'ສິນຄ້າທັງບໍລິສັດ' : 'ສິນຄ້າຄັງຂາຍ',
-                        style: TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
+    return Column(
+      children: [
+        _buildInventoryHeader(),
+        Expanded(
+          child: NotificationListener<ScrollNotification>(
+            onNotification: _onScroll,
+            child: CustomScrollView(
+              controller: _scrollController,
+              slivers: [
+                if (_items.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _EmptyView(
+                      hasQuery: _query.isNotEmpty,
+                      onClear: () {
+                        _searchCtl.clear();
+                        _runSearch('');
+                      },
+                    ),
+                  )
+                else ...[
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(kSpace4, kSpace2, kSpace4, 0),
+                    sliver: SliverList.builder(
+                      itemCount: _items.length,
+                      itemBuilder: (context, i) {
+                        final item = _items[i];
+                        final promo = _activePromoForProduct(item.code);
+                        return _RedesignedInventoryCard(
+                          item: item,
+                          fmt: _qtyFmt,
+                          priceFmt: _priceFmt,
+                          promoName: promo?.name,
+                          onTap: () => _openDetail(item),
+                        );
+                      },
+                    ),
+                  ),
+                  if (_hasMore)
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(kSpace4, kSpace2, kSpace4, 110),
+                      sliver: SliverToBoxAdapter(
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _loadingMore ? null : _loadMore,
+                            borderRadius: BorderRadius.circular(kRadiusMd),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: kSpace3),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  if (_loadingMore) ...[
+                                    const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)),
+                                    const SizedBox(width: 8),
+                                    Text('ກຳລັງໂຫຼດ…', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 13)),
+                                  ] else ...[
+                                    Icon(Icons.expand_more_rounded, size: 16, color: AppColors.primary),
+                                    const SizedBox(width: 6),
+                                    Text('ໂຫຼດເພີ່ມ', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 13)),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.baseline,
-                        textBaseline: TextBaseline.alphabetic,
-                        children: [
-                          Text(
-                            fmt.format(stats.total),
-                            style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 30,
-                              fontWeight: FontWeight.w700,
-                              height: 1,
-                              letterSpacing: -0.6,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'SKU',
-                            style: TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                _SyncChip(
-                  syncedAt: syncedAt,
-                  syncing: syncing,
-                  dateFmt: dateFmt,
-                  onSync: onSync,
-                ),
+                    )
+                  else
+                    const SliverPadding(padding: EdgeInsets.only(bottom: 110)),
+                ],
               ],
             ),
-            const SizedBox(height: 18),
-            Divider(height: 1, color: AppColors.divider),
-            const SizedBox(height: 14),
-            // Three mini-stats — soft tints (emerald / amber / red).
-            Row(
-              children: [
-                Expanded(
-                  child: _MiniStat(
-                    label: 'ມີສິນຄ້າ',
-                    value: stats.inStock,
-                    color: AppColors.success,
-                    fmt: fmt,
-                  ),
-                ),
-                Expanded(
-                  child: _MiniStat(
-                    label: 'ໃກ້ໝົດ',
-                    value: stats.lowStock,
-                    color: AppColors.warning,
-                    fmt: fmt,
-                  ),
-                ),
-                Expanded(
-                  child: _MiniStat(
-                    label: 'ໝົດ',
-                    value: stats.outOfStock,
-                    color: AppColors.danger,
-                    fmt: fmt,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      ),
-    );
-  }
-}
-
-class _MiniStat extends StatelessWidget {
-  const _MiniStat({
-    required this.label,
-    required this.value,
-    required this.color,
-    required this.fmt,
-  });
-  final String label;
-  final int value;
-  final Color color;
-  final NumberFormat fmt;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 5),
-            Text(
-              label,
-              style: TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.5,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          fmt.format(value),
-          style: TextStyle(
-            color: color,
-            fontSize: 17,
-            fontWeight: FontWeight.w900,
-            height: 1,
           ),
         ),
       ],
@@ -579,683 +375,288 @@ class _MiniStat extends StatelessWidget {
   }
 }
 
-class _SyncChip extends StatelessWidget {
-  const _SyncChip({
-    required this.syncedAt,
-    required this.syncing,
-    required this.dateFmt,
-    required this.onSync,
-  });
-  final DateTime? syncedAt;
-  final bool syncing;
-  final DateFormat dateFmt;
-  final VoidCallback? onSync;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.bg,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onSync,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              syncing
-                  ? SizedBox(
-                      width: 13,
-                      height: 13,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppColors.gold,
-                      ),
-                    )
-                  : Icon(
-                      Icons.cloud_sync_outlined,
-                      size: 14,
-                      color: AppColors.gold,
-                    ),
-              if (syncedAt != null) ...[
-                const SizedBox(width: 5),
-                Text(
-                  dateFmt.format(syncedAt!.toLocal()),
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ScopePicker extends StatelessWidget {
-  const _ScopePicker({
-    required this.scope,
-    required this.salesWarehouses,
-    required this.onChanged,
-  });
-  final InventoryScope scope;
-  final List<String> salesWarehouses;
-  final ValueChanged<InventoryScope> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(11),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _opt(
-              active: scope == InventoryScope.company,
-              icon: Icons.business_outlined,
-              label: 'ບໍລິສັດ',
-              onTap: () => onChanged(InventoryScope.company),
-            ),
-          ),
-          Expanded(
-            child: _opt(
-              active: scope == InventoryScope.sales,
-              icon: Icons.storefront_outlined,
-              label: salesWarehouses.isEmpty
-                  ? 'ຂາຍ'
-                  : 'ຂາຍ · ${salesWarehouses.join("/")}',
-              onTap: () => onChanged(InventoryScope.sales),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _opt({
-    required bool active,
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            gradient: active
-                ? LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppColors.goldBright, AppColors.gold],
-                  )
-                : null,
-            boxShadow: active
-                ? [
-                    BoxShadow(
-                      color: AppColors.gold.withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
-                    ),
-                  ]
-                : null,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 16,
-                color: active ? AppColors.bg : AppColors.textSecondary,
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: active ? AppColors.bg : AppColors.textSecondary,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FilterBar extends StatelessWidget {
-  const _FilterBar({
-    required this.stockFilter,
-    required this.stats,
-    required this.fmt,
-    required this.onFilterChanged,
-    required this.stockColorFor,
-  });
-
-  final _StockFilter stockFilter;
-  final _StockStats stats;
-  final NumberFormat fmt;
-  final ValueChanged<_StockFilter> onFilterChanged;
-  final Color Function(double) stockColorFor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          _FilterPill(
-            label: 'All',
-            count: stats.total,
-            color: AppColors.gold,
-            selected: stockFilter == _StockFilter.all,
-            onTap: () => onFilterChanged(_StockFilter.all),
-            fmt: fmt,
-          ),
-          _FilterPill(
-            label: 'In stock',
-            count: stats.inStock,
-            color: AppColors.success,
-            selected: stockFilter == _StockFilter.inStock,
-            onTap: () => onFilterChanged(_StockFilter.inStock),
-            fmt: fmt,
-          ),
-          _FilterPill(
-            label: 'Low',
-            count: stats.lowStock,
-            color: AppColors.warning,
-            selected: stockFilter == _StockFilter.lowStock,
-            onTap: () => onFilterChanged(_StockFilter.lowStock),
-            fmt: fmt,
-          ),
-          _FilterPill(
-            label: 'Out',
-            count: stats.outOfStock,
-            color: AppColors.danger,
-            selected: stockFilter == _StockFilter.outOfStock,
-            onTap: () => onFilterChanged(_StockFilter.outOfStock),
-            fmt: fmt,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FilterPill extends StatelessWidget {
-  const _FilterPill({
-    required this.label,
-    required this.count,
-    required this.color,
-    required this.selected,
-    required this.onTap,
-    required this.fmt,
-  });
-
-  final String label;
-  final int count;
-  final Color color;
-  final bool selected;
-  final VoidCallback onTap;
-  final NumberFormat fmt;
-
-  @override
-  Widget build(BuildContext context) {
-    final bg = selected ? color.withValues(alpha: 0.15) : AppColors.cardBg;
-    final fg = selected ? color : AppColors.textSecondary;
-    return Material(
-      color: bg,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: selected ? color.withValues(alpha: 0.5) : AppColors.border,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: selected ? color : AppColors.textMuted,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 7),
-              Text(
-                label,
-                style: TextStyle(
-                  color: fg,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? color.withValues(alpha: 0.18)
-                      : AppColors.bg,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  fmt.format(count),
-                  style: TextStyle(
-                    color: fg,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 11,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SearchField extends StatelessWidget {
-  const _SearchField({required this.controller, required this.onChanged});
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      onChanged: onChanged,
-      cursorColor: AppColors.gold,
-      style: TextStyle(
-        color: AppColors.textPrimary,
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-      ),
-      decoration: InputDecoration(
-        hintText: 'ຄົ້ນຫາ ຊື່ / ລະຫັດ / ຍີ່ຫໍ້',
-        hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
-        prefixIcon: Icon(
-          Icons.search,
-          color: AppColors.textSecondary,
-          size: 19,
-        ),
-        suffixIcon: controller.text.isEmpty
-            ? null
-            : IconButton(
-                icon: const Icon(
-                  Icons.close,
-                  size: 17,
-                ),
-                onPressed: () {
-                  controller.clear();
-                  onChanged('');
-                },
-              ),
-        filled: true,
-        fillColor: AppColors.cardBg,
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 13,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(11),
-          borderSide: BorderSide(color: AppColors.border),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(11),
-          borderSide: BorderSide(color: AppColors.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(11),
-          borderSide: BorderSide(
-            color: AppColors.gold.withValues(alpha: 0.6),
-            width: 1.4,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _InventoryListCard extends StatelessWidget {
-  const _InventoryListCard({
-    required this.items,
-    required this.scope,
-    required this.fmt,
-    required this.stockColorFor,
-    required this.stockLabelFor,
-    required this.qtyTextFor,
-    required this.hasMore,
-    required this.remaining,
-    required this.onLoadMore,
-    required this.remainingFmt,
-    required this.onTap,
-  });
-
-  final List<InventoryItem> items;
-  final InventoryScope scope;
-  final NumberFormat fmt;
-  final Color Function(InventoryItem, double) stockColorFor;
-  final String Function(InventoryItem, double) stockLabelFor;
-  final String Function(double) qtyTextFor;
-  final bool hasMore;
-  final int remaining;
-  final VoidCallback onLoadMore;
-  final NumberFormat remainingFmt;
-  final void Function(InventoryItem) onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeInSlide(
-      duration: const Duration(milliseconds: 500),
-      child: GlassCard(
-        radius: kRadiusLg,
-        padding: EdgeInsets.zero,
-        child: Column(
-        children: [
-          for (int i = 0; i < items.length; i++)
-            _InventoryRow(
-              item: items[i],
-              bal: items[i].balanceFor(scope),
-              fmt: fmt,
-              stockColor: stockColorFor(items[i], items[i].balanceFor(scope)),
-              stockLabel: stockLabelFor(items[i], items[i].balanceFor(scope)),
-              qtyText: qtyTextFor(items[i].balanceFor(scope)),
-              showDivider: i != items.length - 1 || hasMore,
-              onTap: () => onTap(items[i]),
-            ),
-          if (hasMore)
-            InkWell(
-              onTap: onLoadMore,
-              borderRadius: const BorderRadius.vertical(
-                bottom: Radius.circular(14),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.expand_more,
-                      size: 16,
-                      color: AppColors.gold,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'ໂຫຼດເພີ່ມ · ເຫຼືອ ${remainingFmt.format(remaining)}',
-                      style: TextStyle(
-                        color: AppColors.gold,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-      ),
-    );
-  }
-}
-
-class _InventoryRow extends StatelessWidget {
-  const _InventoryRow({
+// -------------------------------
+// Redesigned inventory card
+// -------------------------------
+class _RedesignedInventoryCard extends StatelessWidget {
+  const _RedesignedInventoryCard({
     required this.item,
-    required this.bal,
     required this.fmt,
-    required this.stockColor,
-    required this.stockLabel,
-    required this.qtyText,
-    required this.showDivider,
+    required this.priceFmt,
+    this.promoName,
     required this.onTap,
   });
 
   final InventoryItem item;
-  final double bal;
   final NumberFormat fmt;
-  final Color stockColor;
-  final String stockLabel;
-  final String qtyText;
-  final bool showDivider;
+  final NumberFormat priceFmt;
+  final String? promoName;
   final VoidCallback onTap;
+
+  Color _statusColor(InventoryItem item) {
+    if (item.companyBalance <= 0) return AppColors.danger;
+    if (item.companyBalance <= item.salesMinimumStock) return AppColors.warning;
+    return AppColors.success;
+  }
+
+  String _statusLabel(InventoryItem item) {
+    if (item.companyBalance <= 0) return 'ໝົດ';
+    if (item.companyBalance <= item.salesMinimumStock) return 'ໃກ້ໝົດ';
+    return 'ມີສິນຄ້າ';
+  }
+
+  double _stockPercentage() {
+    if (item.salesMinimumStock <= 0) return 1.0;
+    final ratio = item.companyBalance / item.salesMinimumStock;
+    return ratio.clamp(0.0, 2.0) / 2.0; // Max 100% indicator at 2x min stock
+  }
 
   @override
   Widget build(BuildContext context) {
-    final brand = item.brandName ?? item.brand;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
+    final statusColor = _statusColor(item);
+    final statusLabel = _statusLabel(item);
+    final unit = item.unitName ?? 'ອັນ';
+    final isDark = ThemeService.isDark;
+    final stockPercent = _stockPercentage();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: kSpace3),
+      child: SurfaceCard(
         onTap: onTap,
-        splashColor: AppColors.gold.withValues(alpha: 0.08),
-        highlightColor: AppColors.gold.withValues(alpha: 0.05),
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: showDivider ? AppColors.divider : Colors.transparent,
-              ),
-            ),
-          ),
-          padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Glowing stock accent bar.
-              Container(
-                width: 4,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: stockColor,
-                  borderRadius: BorderRadius.circular(2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: stockColor.withValues(alpha: 0.55),
-                      blurRadius: 8,
+        padding: const EdgeInsets.all(kSpace4),
+        accent: statusColor,
+        radius: kRadiusLg,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header row with icon, title, status badge
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Product icon bubble (can be replaced with network image later)
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [statusColor.withValues(alpha: 0.2), statusColor.withValues(alpha: 0.05)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                  ],
+                    borderRadius: BorderRadius.circular(kRadiusMd),
+                    border: Border.all(color: statusColor.withValues(alpha: 0.3), width: 1.2),
+                  ),
+                  child: Icon(
+                    Icons.inventory_rounded,
+                    color: statusColor,
+                    size: 28,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            item.nameLo,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 15,
-                              height: 1.2,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        _StatusBadge(color: stockColor, label: stockLabel),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.gold.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            item.code,
-                            style: TextStyle(
-                              color: AppColors.gold,
-                              fontFamily: 'monospace',
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                        if (brand != null && brand.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          Icon(
-                            Icons.business_outlined,
-                            size: 11,
-                            color: AppColors.textMuted,
-                          ),
-                          const SizedBox(width: 3),
-                          Flexible(
-                            child: Text(
-                              brand,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: AppColors.textMuted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
+                const SizedBox(width: kSpace3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        qtyText,
+                        item.nameLo,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: stockColor,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 17,
-                          letterSpacing: -0.3,
+                          color: AppColors.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          height: 1.25,
                         ),
                       ),
-                      if ((item.unitName ?? '').isNotEmpty) ...[
-                        const SizedBox(width: 3),
-                        Text(
-                          item.unitName!,
-                          style: TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.code, size: 12, color: AppColors.textMuted),
+                          const SizedBox(width: 4),
+                          Text(
+                            item.code,
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textMuted,
+                            ),
                           ),
-                        ),
-                      ],
+                          if (item.brandName != null && item.brandName!.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Icon(Icons.branding_watermark, size: 12, color: AppColors.textMuted),
+                            const SizedBox(width: 4),
+                            Text(
+                              item.brandName!,
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                            ),
+                          ],
+                        ],
+                      ),
                     ],
                   ),
-                  if (item.salePriceKip > 0) ...[
-                    const SizedBox(height: 2),
+                ),
+                const SizedBox(width: kSpace2),
+                StatusBadge(label: statusLabel, color: statusColor, size: StatusBadgeSize.small),
+              ],
+            ),
+
+            // Promotion badge (if active)
+            if (promoName != null && promoName!.isNotEmpty) ...[
+              const SizedBox(height: kSpace3),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.brandOrange.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(kRadiusSm),
+                  border: Border.all(color: AppColors.brandOrange.withValues(alpha: 0.22), width: 0.5),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.local_offer_rounded, size: 14, color: AppColors.brandOrange),
+                    const SizedBox(width: 4),
+                    Text('ໂປຣ: $promoName', style: const TextStyle(color: AppColors.brandOrange, fontSize: 11, fontWeight: FontWeight.w800)),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: kSpace4),
+
+            // Stock indicator with progress bar
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
                     Text(
-                      '${fmt.format(item.salePriceKip)} ກີບ',
+                      'ສະຕັອກຄົງເຫຼືອ',
+                      style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600),
+                    ),
+                    Text(
+                      '${fmt.format(item.companyBalance)} $unit',
                       style: TextStyle(
-                        color: AppColors.gold,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        fontFeatures: kTabularFigures,
                       ),
                     ),
                   ],
-                ],
-              ),
-              const SizedBox(width: 4),
-              Icon(
-                Icons.chevron_right,
-                color: AppColors.textMuted,
-                size: 18,
-              ),
-            ],
-          ),
+                ),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: LinearProgressIndicator(
+                    value: stockPercent,
+                    backgroundColor: AppColors.border,
+                    color: statusColor,
+                    minHeight: 6,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'ສະຕັອກຕຳ່ສຸດ: ${fmt.format(item.salesMinimumStock)} $unit',
+                      style: TextStyle(color: AppColors.textMuted, fontSize: 9),
+                    ),
+                    if (item.companyBalance > item.salesMinimumStock)
+                      Icon(Icons.check_circle, size: 12, color: AppColors.success)
+                    else if (item.companyBalance > 0)
+                      Icon(Icons.warning_amber_rounded, size: 12, color: AppColors.warning)
+                    else
+                      Icon(Icons.cancel_rounded, size: 12, color: AppColors.danger),
+                  ],
+                ),
+              ],
+            ),
+
+            const SizedBox(height: kSpace4),
+            Divider(height: 1, color: AppColors.border.withValues(alpha: isDark ? 0.25 : 0.45)),
+            const SizedBox(height: kSpace4),
+
+            // Price and action row
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('ລາຄາຂາຍ', style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      if (item.salePriceKip > 0)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              priceFmt.format(item.salePriceKip),
+                              style: TextStyle(
+                                color: AppColors.primary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                fontFeatures: kTabularFigures,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text('ກີບ', style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w500)),
+                          ],
+                        )
+                      else
+                        Text('ຍັງບໍ່ມີລາຄາ', style: TextStyle(color: AppColors.textMuted, fontSize: 12, fontStyle: FontStyle.italic)),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.chevron_right, size: 16, color: statusColor),
+                      const SizedBox(width: 2),
+                      Text('ລາຍລະອຽດ', style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.color, required this.label});
-  final Color color;
+// Helper widgets remain unchanged or slightly polished
+class _InventoryStatTile extends StatelessWidget {
+  const _InventoryStatTile({required this.label, required this.value, required this.color});
   final String label;
+  final String value;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
+    final isWhite = color == Colors.white;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: kSpace3, vertical: kSpace2),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(4),
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(kRadiusMd),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w800,
-              fontSize: 10,
-              letterSpacing: 0.3,
-            ),
-          ),
+          Container(width: 8, height: 8, decoration: BoxDecoration(color: isWhite ? Colors.white : color, shape: BoxShape.circle)),
+          const SizedBox(width: kSpace2),
+          Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.74), fontSize: 11, fontWeight: FontWeight.w700))),
+          Text(value, style: TextStyle(color: isWhite ? Colors.white : color, fontSize: 16, fontWeight: FontWeight.w900, fontFeatures: kTabularFigures)),
         ],
       ),
     );
@@ -1264,7 +665,6 @@ class _StatusBadge extends StatelessWidget {
 
 class _EmptyView extends StatelessWidget {
   const _EmptyView({required this.hasQuery, required this.onClear});
-
   final bool hasQuery;
   final VoidCallback onClear;
 
@@ -1282,57 +682,21 @@ class _EmptyView extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppColors.cardBg,
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppColors.gold.withValues(alpha: 0.3),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.gold.withValues(alpha: 0.10),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
+                border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
+                boxShadow: [BoxShadow(color: AppColors.gold.withValues(alpha: 0.10), blurRadius: 16, offset: const Offset(0, 6))],
               ),
-              child: Icon(
-                Icons.inventory_2_outlined,
-                color: AppColors.gold,
-                size: 30,
-              ),
+              child: Icon(Icons.inventory_2_outlined, color: AppColors.gold, size: 30),
             ),
             const SizedBox(height: 14),
-            Text(
-              hasQuery ? 'ບໍ່ພົບສິນຄ້າທີ່ຄົ້ນຫາ' : 'ບໍ່ມີສິນຄ້າ',
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
+            Text(hasQuery ? 'ບໍ່ພົບສິນຄ້າທີ່ຄົ້ນຫາ' : 'ບໍ່ມີສິນຄ້າ', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
             const SizedBox(height: 4),
-            Text(
-              'ລອງປ່ຽນ scope ຫຼື ລ້າງຕົວກອງ',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
-            ),
+            Text('ລອງປ່ຽນ scope ຫຼື ລ້າງຕົວກອງ', style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
             const SizedBox(height: 14),
             OutlinedButton.icon(
               onPressed: onClear,
-              icon: Icon(
-                Icons.clear_all,
-                size: 16,
-                color: AppColors.gold,
-              ),
-              label: Text(
-                'ລ້າງຕົວກອງ',
-                style: TextStyle(
-                  color: AppColors.gold,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: AppColors.gold.withValues(alpha: 0.4)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
+              icon: Icon(Icons.clear_all, size: 16, color: AppColors.gold),
+              label: Text('ລ້າງຕົວກອງ', style: TextStyle(color: AppColors.gold, fontWeight: FontWeight.w700)),
+              style: OutlinedButton.styleFrom(side: BorderSide(color: AppColors.gold.withValues(alpha: 0.4)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             ),
           ],
         ),
@@ -1350,60 +714,25 @@ class _ErrorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-      ),
+      decoration: BoxDecoration(color: AppColors.cardBg, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)),
       child: Column(
         children: [
           Container(
             width: 52,
             height: 52,
-            decoration: BoxDecoration(
-              color: AppColors.danger.withValues(alpha: 0.14),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.cloud_off,
-              color: AppColors.danger,
-              size: 26,
-            ),
+            decoration: BoxDecoration(color: AppColors.danger.withValues(alpha: 0.14), shape: BoxShape.circle),
+            child: const Icon(Icons.cloud_off, color: AppColors.danger, size: 26),
           ),
           const SizedBox(height: 12),
-          Text(
-            'ດຶງຂໍ້ມູນບໍ່ສຳເລັດ',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
+          Text('ດຶງຂໍ້ມູນບໍ່ສຳເລັດ', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
           const SizedBox(height: 4),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-            ),
-          ),
+          Text(message, textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
           const SizedBox(height: 14),
           FilledButton.icon(
             onPressed: onRetry,
             icon: Icon(Icons.refresh, size: 17, color: AppColors.bg),
-            label: Text(
-              'ລອງໃໝ່',
-              style: TextStyle(
-                color: AppColors.bg,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.gold,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
+            label: Text('ລອງໃໝ່', style: TextStyle(color: AppColors.bg, fontWeight: FontWeight.w800)),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
           ),
         ],
       ),

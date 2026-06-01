@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -15,23 +17,15 @@ class OrdersScreen extends StatefulWidget {
 }
 
 class _OrdersScreenState extends State<OrdersScreen> {
-  final _fmt = NumberFormat('#,###', 'en_US');
   final _moneyFmt = NumberFormat('#,###.##', 'en_US');
   final _dateFmt = DateFormat('dd/MM HH:mm');
   final _fullDateFmt = DateFormat('dd/MM/yyyy HH:mm');
   final _searchCtl = TextEditingController();
 
   Future<List<SaleOrder>>? _future;
-  String _filter = 'ALL';
-  // The backend already scopes /api/orders to the logged-in salesperson. Show
-  // all returned rows by default so older orders do not look like a failed load.
-  String _scope = 'ALL'; // 'TODAY' | 'ALL'
+  Timer? _searchDebounce;
+  String _filter = 'PENDING';
   String _query = '';
-
-  static bool _isToday(DateTime dt) {
-    final now = DateTime.now();
-    return dt.year == now.year && dt.month == now.month && dt.day == now.day;
-  }
 
   @override
   void didChangeDependencies() {
@@ -41,13 +35,37 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtl.dispose();
     super.dispose();
   }
 
-  void _reload() {
+  Future<void> _reload() async {
+    final future = AppScope.of(context).api.listOrders();
     setState(() {
-      _future = AppScope.of(context).api.listOrders();
+      _future = future;
+    });
+    try {
+      await future;
+    } catch (_) {
+      // FutureBuilder renders the error state; RefreshIndicator only needs
+      // the refresh gesture to complete cleanly.
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 160), () {
+      if (mounted) setState(() => _query = value);
+    });
+  }
+
+  void _clearFilters() {
+    _searchDebounce?.cancel();
+    _searchCtl.clear();
+    setState(() {
+      _filter = 'PENDING';
+      _query = '';
     });
   }
 
@@ -58,15 +76,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
     switch (s) {
       case 'PAID':
       case 'COMPLETED':
-        return const Color(0xFF10B981); // emerald — paid
+        return AppColors.success;
       case 'SCHEDULED':
       case 'SHIPPED':
-        return const Color(0xFF3B82F6); // blue — assigned to a trip
+        return AppColors.info;
       case 'CANCELLED':
-        return const Color(0xFFEF4444); // red
+        return AppColors.danger;
       case 'PENDING':
       default:
-        return const Color(0xFFF59E0B); // amber — waiting for cashier
+        return AppColors.warning;
     }
   }
 
@@ -91,67 +109,65 @@ class _OrdersScreenState extends State<OrdersScreen> {
     await Navigator.of(
       context,
     ).push<bool>(MaterialPageRoute(builder: (_) => const CreateOrderScreen()));
-    if (mounted) _reload();
-  }
-
-  // Apply scope (today vs all) first, then status, then text query. Scope is
-  // the top-level lens; status pills filter within the scoped subset.
-  List<SaleOrder> _scoped(List<SaleOrder> all) {
-    if (_scope == 'TODAY') {
-      return all.where((o) => _isToday(o.createdAt)).toList();
-    }
-    return all;
+    if (mounted) await _reload();
   }
 
   List<SaleOrder> _filtered(List<SaleOrder> all) {
     final q = _query.trim().toLowerCase();
-    return _scoped(all).where((o) {
-      if (_filter != 'ALL' && o.status != _filter) return false;
-      if (q.isEmpty) return true;
-      return (o.customer?.name ?? '').toLowerCase().contains(q) ||
-          o.id.toLowerCase().contains(q);
-    }).toList();
+    final filtered = <SaleOrder>[];
+    for (final o in all) {
+      if (o.status != _filter) continue;
+      if (q.isEmpty) {
+        filtered.add(o);
+        continue;
+      }
+      final customerName = o.customer?.name.toLowerCase() ?? '';
+      final docNo = o.docNo?.toLowerCase() ?? '';
+      if (customerName.contains(q) ||
+          o.id.toLowerCase().contains(q) ||
+          docNo.contains(q)) {
+        filtered.add(o);
+      }
+    }
+    return filtered;
   }
 
   Map<String, int> _countByStatus(List<SaleOrder> orders) {
-    final m = <String, int>{
-      'PENDING': 0,
-      'PAID': 0,
-      'SHIPPED': 0,
-      'COMPLETED': 0,
-      'CANCELLED': 0,
-    };
+    final m = <String, int>{'PENDING': 0, 'COMPLETED': 0};
     for (final o in orders) {
-      m[o.status] = (m[o.status] ?? 0) + 1;
+      if (o.status == 'PENDING' || o.status == 'COMPLETED') {
+        m[o.status] = (m[o.status] ?? 0) + 1;
+      }
     }
     return m;
   }
 
+  double _sumByStatus(List<SaleOrder> orders, String status) {
+    var sum = 0.0;
+    for (final o in orders) {
+      if (o.status == status) sum += o.total;
+    }
+    return sum;
+  }
+
   void _showDetail(SaleOrder o) {
-    showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.bg,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.75,
-        maxChildSize: 0.95,
-        minChildSize: 0.5,
-        expand: false,
-        builder: (_, controller) => _OrderDetailSheet(
-          order: o,
-          controller: controller,
-          fmt: _moneyFmt,
-          dateFmt: _fullDateFmt,
-          statusColor: _statusColor(o.status),
-          statusLabel: _statusLabel(o.status),
-        ),
-      ),
-    ).then((changed) {
-      if (changed == true && mounted) _reload();
-    });
+    // Detail is now a full page — easier to read on a phone and lets the
+    // user use the system back gesture instead of a tiny grab handle.
+    Navigator.of(context)
+        .push<bool>(
+          MaterialPageRoute(
+            builder: (_) => _OrderDetailScreen(
+              order: o,
+              fmt: _moneyFmt,
+              dateFmt: _fullDateFmt,
+              statusColor: _statusColor(o.status),
+              statusLabel: _statusLabel(o.status),
+            ),
+          ),
+        )
+        .then((changed) {
+          if (changed == true && mounted) _reload();
+        });
   }
 
   @override
@@ -159,24 +175,50 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppColors.bg,
+        floatingActionButton: Material(
+          color: AppColors.primary,
+          elevation: 3,
+          shadowColor: AppColors.primary.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(kRadiusPill),
+          child: InkWell(
+            onTap: _openCreate,
+            borderRadius: BorderRadius.circular(kRadiusPill),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add_rounded, color: Colors.white, size: 18),
+                  SizedBox(width: 5),
+                  Text(
+                    'ສ້າງບິນ',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
         body: TabletConstrain(
           maxWidth: 900,
           child: RefreshIndicator(
-            color: AppColors.gold,
+            color: AppColors.primary,
             backgroundColor: AppColors.cardBg,
-            onRefresh: () async => _reload(),
+            onRefresh: _reload,
             child: FutureBuilder<List<SaleOrder>>(
               future: _future,
               builder: (context, snap) {
                 if (snap.connectionState != ConnectionState.done) {
-                  return Center(
-                    child: CircularProgressIndicator(color: AppColors.gold),
-                  );
+                  return const BrandedSpinner(label: 'ກຳລັງໂຫຼດ Order…');
                 }
                 if (snap.hasError) {
                   return ListView(
-                    padding: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.all(kSpace5),
                     children: [
                       const SizedBox(height: 60),
                       _ErrorCard(
@@ -187,41 +229,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   );
                 }
                 final orders = snap.data ?? [];
-                final scoped = _scoped(orders);
+                final scoped = orders;
                 final filtered = _filtered(orders);
-                final totalAmt = scoped.fold<double>(0, (s, o) => s + o.total);
+                final statusCounts = _countByStatus(scoped);
                 return CustomScrollView(
                   slivers: [
                     SliverToBoxAdapter(
-                      child: _HeroCard(
-                        scope: _scope,
-                        count: scoped.length,
-                        totalAmount: totalAmt,
-                        fmt: _fmt,
-                        moneyFmt: _moneyFmt,
-                        onToggleScope: () => setState(() {
-                          _scope = _scope == 'TODAY' ? 'ALL' : 'TODAY';
-                        }),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: _FilterBar(
+                      child: _OrdersHeader(
                         filter: _filter,
-                        statusCounts: _countByStatus(scoped),
-                        totalCount: scoped.length,
-                        fmt: _fmt,
+                        totalCount: orders.length,
+                        pendingCount: statusCounts['PENDING'] ?? 0,
+                        completedCount: statusCounts['COMPLETED'] ?? 0,
+                        pendingTotal: _sumByStatus(scoped, 'PENDING'),
+                        completedTotal: _sumByStatus(scoped, 'COMPLETED'),
+                        moneyFmt: _moneyFmt,
+                        searchController: _searchCtl,
+                        onSearchChanged: _onSearchChanged,
                         onFilterChanged: (f) => setState(() => _filter = f),
-                        statusColor: _statusColor,
-                        statusLabel: _statusLabel,
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                        child: _SearchField(
-                          controller: _searchCtl,
-                          onChanged: (v) => setState(() => _query = v),
-                        ),
                       ),
                     ),
                     if (orders.isEmpty)
@@ -232,28 +256,34 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     else if (filtered.isEmpty)
                       SliverFillRemaining(
                         hasScrollBody: false,
-                        child: _NoMatchView(
-                          onClear: () {
-                            _searchCtl.clear();
-                            setState(() {
-                              _filter = 'ALL';
-                              _query = '';
-                            });
-                          },
-                        ),
+                        child: _NoMatchView(onClear: _clearFilters),
                       )
                     else
                       SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
-                        sliver: SliverToBoxAdapter(
-                          child: _OrdersListCard(
-                            orders: filtered,
-                            fmt: _moneyFmt,
-                            dateFmt: _dateFmt,
-                            statusColorFor: _statusColor,
-                            statusLabelFor: _statusLabel,
-                            onTap: _showDetail,
-                          ),
+                        padding: const EdgeInsets.fromLTRB(
+                          kSpace4,
+                          kSpace2,
+                          kSpace4,
+                          96,
+                        ),
+                        sliver: SliverList.builder(
+                          itemCount: filtered.length,
+                          itemBuilder: (context, i) {
+                            final order = filtered[i];
+                            return Padding(
+                              padding: EdgeInsets.only(
+                                bottom: i == filtered.length - 1 ? 0 : kSpace3,
+                              ),
+                              child: _OrderRow(
+                                order: order,
+                                fmt: _moneyFmt,
+                                dateFmt: _dateFmt,
+                                statusColor: _statusColor(order.status),
+                                statusLabel: _statusLabel(order.status),
+                                onTap: () => _showDetail(order),
+                              ),
+                            );
+                          },
                         ),
                       ),
                   ],
@@ -262,286 +292,273 @@ class _OrdersScreenState extends State<OrdersScreen> {
             ),
           ),
         ),
-        bottomNavigationBar: TabletConstrain(
-          maxWidth: 900,
-          child: _CreateOrderBar(onTap: _openCreate),
-        ),
       ),
     );
   }
 }
 
-class _CreateOrderBar extends StatelessWidget {
-  const _CreateOrderBar({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    // Flat primary action bar — no gradient, no glow. The button itself uses
-    // the theme's FilledButton style so it stays consistent with the rest of
-    // the app.
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-        decoration: BoxDecoration(
-          color: AppColors.bg,
-          border: Border(top: BorderSide(color: AppColors.divider)),
-        ),
-        child: SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: onTap,
-            icon: const Icon(Icons.add, size: 20),
-            label: const Text('ສ້າງ Sale Order ໃໝ່'),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HeroCard extends StatelessWidget {
-  const _HeroCard({
-    required this.scope,
-    required this.count,
-    required this.totalAmount,
-    required this.fmt,
-    required this.moneyFmt,
-    required this.onToggleScope,
-  });
-  final String scope;
-  final int count;
-  final double totalAmount;
-  final NumberFormat fmt;
-  final NumberFormat moneyFmt;
-  final VoidCallback onToggleScope;
-
-  @override
-  Widget build(BuildContext context) {
-    final isToday = scope == 'TODAY';
-    final hasData = count > 0;
-    // Calm white hero — the number does the work, no gradient sheen, no
-    // colored borders. Scope toggle drops into a borderless ghost pill on
-    // the right.
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: FadeInSlide(
-        duration: const Duration(milliseconds: 400),
-        child: GlassCard(
-          padding: const EdgeInsets.fromLTRB(18, 16, 14, 16),
-          radius: kRadiusLg,
-          child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isToday ? 'ມື້ນີ້' : 'ທັງໝົດ',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Text(
-                          moneyFmt.format(totalAmount),
-                          style: TextStyle(
-                            color: hasData
-                                ? AppColors.textPrimary
-                                : AppColors.textMuted,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w700,
-                            height: 1,
-                            letterSpacing: -0.6,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'ກີບ',
-                          style: TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${fmt.format(count)} ບິນ',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Scope toggle — flips TODAY ↔ ALL. Ghost pill, no fill.
-            OutlinedButton.icon(
-              onPressed: onToggleScope,
-              icon: Icon(
-                isToday ? Icons.calendar_month_outlined : Icons.today_outlined,
-                size: 16,
-              ),
-              label: Text(isToday ? 'ທັງໝົດ' : 'ມື້ນີ້'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(0, 36),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(kRadiusXl),
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      ),
-    );
-  }
-}
-
-class _FilterBar extends StatelessWidget {
-  const _FilterBar({
+// Purple gradient header (matches the inventory screen): icon + title +
+// subtitle, two tappable status stat-tiles that act as the filter, and the
+// search field — all inside one card.
+class _OrdersHeader extends StatelessWidget {
+  const _OrdersHeader({
     required this.filter,
-    required this.statusCounts,
     required this.totalCount,
-    required this.fmt,
+    required this.pendingCount,
+    required this.completedCount,
+    required this.pendingTotal,
+    required this.completedTotal,
+    required this.moneyFmt,
+    required this.searchController,
+    required this.onSearchChanged,
     required this.onFilterChanged,
-    required this.statusColor,
-    required this.statusLabel,
   });
 
   final String filter;
-  final Map<String, int> statusCounts;
   final int totalCount;
-  final NumberFormat fmt;
+  final int pendingCount;
+  final int completedCount;
+  final double pendingTotal;
+  final double completedTotal;
+  final NumberFormat moneyFmt;
+  final TextEditingController searchController;
+  final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onFilterChanged;
-  final Color Function(String) statusColor;
-  final String Function(String) statusLabel;
 
   @override
   Widget build(BuildContext context) {
-    // Horizontal scroll keeps the filter row to a single line so the hero +
-    // search + first orders fit above the fold. The full set is one swipe away.
-    return SizedBox(
-      height: 44,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-        children: [
-          _FilterPill(
-            label: 'ທັງໝົດ',
-            count: totalCount,
-            color: AppColors.gold,
-            selected: filter == 'ALL',
-            onTap: () => onFilterChanged('ALL'),
-            fmt: fmt,
+    return Container(
+      margin: const EdgeInsets.fromLTRB(kSpace4, kSpace3, kSpace4, kSpace2),
+      padding: const EdgeInsets.all(kSpace4),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(kRadiusLg),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.22),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
-          const SizedBox(width: 8),
-          for (final s in const [
-            'PENDING',
-            'PAID',
-            'SHIPPED',
-            'COMPLETED',
-            'CANCELLED',
-          ]) ...[
-            _FilterPill(
-              label: statusLabel(s),
-              count: statusCounts[s] ?? 0,
-              color: statusColor(s),
-              selected: filter == s,
-              onTap: () => onFilterChanged(s),
-              fmt: fmt,
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(kRadiusMd),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.16),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.receipt_long_rounded,
+                  color: Colors.white,
+                  size: 23,
+                ),
+              ),
+              const SizedBox(width: kSpace3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Sale Orders',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'ລາຍການຂາຍ ແລະ ສະຖານະຮັບເງິນ',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.78),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '$totalCount ບິນ',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.85),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  fontFeatures: kTabularFigures,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: kSpace4),
+          Row(
+            children: [
+              Expanded(
+                child: _OrderFilterTile(
+                  label: 'ລໍຖ້າຮັບເງິນ',
+                  count: pendingCount,
+                  total: pendingTotal,
+                  color: AppColors.warning,
+                  selected: filter == 'PENDING',
+                  moneyFmt: moneyFmt,
+                  onTap: () => onFilterChanged('PENDING'),
+                ),
+              ),
+              const SizedBox(width: kSpace2),
+              Expanded(
+                child: _OrderFilterTile(
+                  label: 'ຮັບເງິນສຳເລັດ',
+                  count: completedCount,
+                  total: completedTotal,
+                  color: AppColors.success,
+                  selected: filter == 'COMPLETED',
+                  moneyFmt: moneyFmt,
+                  onTap: () => onFilterChanged('COMPLETED'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: kSpace3),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(kRadiusMd),
             ),
-            const SizedBox(width: 8),
-          ],
+            child: SearchField(
+              controller: searchController,
+              hint: 'ຄົ້ນຫາລູກຄ້າ ຫຼື ເລກ Order…',
+              onChanged: onSearchChanged,
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _FilterPill extends StatelessWidget {
-  const _FilterPill({
+// Tappable status stat-tile on the purple header. Selected → solid white
+// card (status-coloured figures); unselected → translucent white-on-purple.
+class _OrderFilterTile extends StatelessWidget {
+  const _OrderFilterTile({
     required this.label,
     required this.count,
+    required this.total,
     required this.color,
     required this.selected,
+    required this.moneyFmt,
     required this.onTap,
-    required this.fmt,
   });
 
   final String label;
   final int count;
+  final double total;
   final Color color;
   final bool selected;
+  final NumberFormat moneyFmt;
   final VoidCallback onTap;
-  final NumberFormat fmt;
 
   @override
   Widget build(BuildContext context) {
-    // Borderless pill — fill swaps between cardElev (idle) and the soft
-    // status tint when selected. The status-color dot is the only chrome.
-    final bg = selected ? color.withValues(alpha: 0.10) : AppColors.cardElev;
-    final fg = selected ? color : AppColors.textSecondary;
     return Material(
-      color: bg,
-      borderRadius: BorderRadius.circular(kRadiusXl),
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(kRadiusMd),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(kRadiusXl),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+        borderRadius: BorderRadius.circular(kRadiusMd),
+        child: AnimatedContainer(
+          duration: kMotionFast,
+          padding: const EdgeInsets.fromLTRB(kSpace3, 9, kSpace3, 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? Colors.white
+                : Colors.white.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(kRadiusMd),
+            border: Border.all(
+              color: selected
+                  ? Colors.transparent
+                  : Colors.white.withValues(alpha: 0.14),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: selected ? color : AppColors.textSoft,
-                  shape: BoxShape.circle,
-                ),
+              Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: kSpace2),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: selected
+                            ? AppColors.textSecondary
+                            : Colors.white.withValues(alpha: 0.78),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '$count',
+                    style: TextStyle(
+                      color: selected ? color : Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      fontFeatures: kTabularFigures,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  color: fg,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  fontSize: 13,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                fmt.format(count),
-                style: TextStyle(
-                  color: fg.withValues(alpha: selected ? 0.85 : 0.6),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                ),
+              const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Flexible(
+                    child: Text(
+                      moneyFmt.format(total),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: selected ? AppColors.textPrimary : Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                        letterSpacing: -0.3,
+                        fontFeatures: kTabularFigures,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    'ກີບ',
+                    style: TextStyle(
+                      color: selected
+                          ? AppColors.textMuted
+                          : Colors.white.withValues(alpha: 0.7),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -551,111 +568,9 @@ class _FilterPill extends StatelessWidget {
   }
 }
 
-class _SearchField extends StatelessWidget {
-  const _SearchField({required this.controller, required this.onChanged});
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      onChanged: onChanged,
-      cursorColor: AppColors.gold,
-      style: TextStyle(
-        color: AppColors.textPrimary,
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-      ),
-      decoration: InputDecoration(
-        hintText: 'ຄົ້ນຫາລູກຄ້າ ຫຼື ເລກ Order',
-        hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
-        prefixIcon: const Icon(
-          Icons.search,
-          color: AppColors.accent,
-          size: 19,
-        ),
-        suffixIcon: controller.text.isEmpty
-            ? null
-            : IconButton(
-                icon: const Icon(
-                  Icons.close,
-                  size: 17,
-                ),
-                onPressed: () {
-                  controller.clear();
-                  onChanged('');
-                },
-              ),
-        filled: true,
-        fillColor: AppColors.cardBg,
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 13,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(11),
-          borderSide: BorderSide(color: AppColors.border),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(11),
-          borderSide: BorderSide(color: AppColors.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(11),
-          borderSide: BorderSide(
-            color: AppColors.gold.withValues(alpha: 0.6),
-            width: 1.4,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _OrdersListCard extends StatelessWidget {
-  const _OrdersListCard({
-    required this.orders,
-    required this.fmt,
-    required this.dateFmt,
-    required this.statusColorFor,
-    required this.statusLabelFor,
-    required this.onTap,
-  });
-  final List<SaleOrder> orders;
-  final NumberFormat fmt;
-  final DateFormat dateFmt;
-  final Color Function(String) statusColorFor;
-  final String Function(String) statusLabelFor;
-  final void Function(SaleOrder) onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    // Each order is its own elevated card with whitespace between rows —
-    // easier to scan than a continuous striped list.
-    return Column(
-      children: [
-        for (var i = 0; i < orders.length; i++) ...[
-          if (i > 0) const SizedBox(height: 10),
-          FadeInSlide(
-            duration: Duration(milliseconds: 300 + (i < 6 ? i * 80 : 480)),
-            delay: Duration(milliseconds: i < 6 ? i * 50 : 300),
-            child: _OrderRow(
-              order: orders[i],
-              fmt: fmt,
-              dateFmt: dateFmt,
-              statusColor: statusColorFor(orders[i].status),
-              statusLabel: statusLabelFor(orders[i].status),
-              onTap: () => onTap(orders[i]),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
+// Order card styled like the product tiles (_ProductTile) in the order
+// picker: bordered card, left status-colour accent bar, name + status pill,
+// doc/amount row, salesperson + date row.
 class _OrderRow extends StatelessWidget {
   const _OrderRow({
     required this.order,
@@ -673,232 +588,195 @@ class _OrderRow extends StatelessWidget {
   final String statusLabel;
   final VoidCallback onTap;
 
-  // First non-empty rune of the customer name → seeds the avatar bubble.
-  String _avatarInitial() {
-    final name = order.customer?.name.trim() ?? '';
-    if (name.isEmpty) return '#';
-    final ch = name.runes.first;
-    return String.fromCharCode(ch).toUpperCase();
-  }
-
-  IconData _statusIcon() {
-    switch (order.status.toUpperCase()) {
-      case 'COMPLETED':
-        return Icons.check_circle;
-      case 'CANCELLED':
-        return Icons.cancel_outlined;
-      case 'PENDING':
-      default:
-        return Icons.schedule;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final docLabel = order.docNo?.trim().isNotEmpty == true
         ? order.docNo!
         : '#${order.id.toUpperCase()}';
-    // Card body is flat white with the global soft shadow (posCardDecoration).
-    // No border. Tap area covers the whole card via InkWell.
-    return GlassCard(
-      radius: kRadiusMd,
-      padding: EdgeInsets.zero,
+    return Material(
+      color: AppColors.cardBg,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(kRadiusMd),
+        side: BorderSide(color: AppColors.border, width: 1),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(kRadiusMd),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-                // Header row: neutral monogram avatar + customer + status pill.
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: AppColors.cardElev,
-                        borderRadius: BorderRadius.circular(kRadiusMd),
-                      ),
-                      child: Text(
-                        _avatarInitial(),
-                        style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+              Container(width: 4, color: statusColor),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
                         children: [
+                          Expanded(
+                            child: Text(
+                              order.customer?.name ?? '—',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                height: 1.25,
+                                letterSpacing: -0.1,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              statusLabel,
+                              style: TextStyle(
+                                color: statusColor,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              docLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 12,
+                                fontFamily: 'monospace',
+                                fontWeight: FontWeight.w500,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
                           Text(
-                            order.customer?.name ?? '—',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            fmt.format(order.total),
                             style: TextStyle(
                               color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                              height: 1.2,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              height: 1,
+                              letterSpacing: -0.2,
+                              fontFeatures: kTabularFigures,
                             ),
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(width: 3),
                           Text(
-                            docLabel,
-                            style: TextStyle(
-                              color: AppColors.textMuted,
-                              fontFamily: 'monospace',
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    _StatusBadge(
-                      color: statusColor,
-                      label: statusLabel,
-                      icon: _statusIcon(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Divider(height: 1, color: AppColors.divider),
-                const SizedBox(height: 12),
-                // Footer: meta on the left, total on the right. Total is the
-                // dominant text here so it stays w700 — everything else is
-                // muted secondary.
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Wrap(
-                        spacing: 12,
-                        runSpacing: 4,
-                        children: [
-                          _MetaChip(
-                            icon: Icons.event_outlined,
-                            label: dateFmt.format(order.createdAt.toLocal()),
-                          ),
-                          _MetaChip(
-                            icon: Icons.shopping_bag_outlined,
-                            label: '${order.items.length} ລາຍການ',
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          fmt.format(order.total),
-                          style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 18,
-                            height: 1,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Padding(
-                          padding: EdgeInsets.only(bottom: 2),
-                          child: Text(
                             'ກີບ',
                             style: TextStyle(
                               color: AppColors.textMuted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          if (order.salesperson != null) ...[
+                            Icon(
+                              Icons.person_outline,
+                              size: 12,
+                              color: AppColors.gold,
+                            ),
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                order.salesperson!.displayName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          const Spacer(),
+                          Icon(
+                            Icons.event_outlined,
+                            size: 11,
+                            color: AppColors.textMuted,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            dateFmt.format(order.createdAt.toLocal()),
+                            style: TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: kTabularFigures,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-      );
-  }
-}
-
-// Small icon + label chip used in the footer of the redesigned order row.
-class _MetaChip extends StatelessWidget {
-  const _MetaChip({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 12, color: AppColors.textMuted),
-        const SizedBox(width: 3),
-        Text(
-          label,
-          style: TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
 
 class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.color, required this.label, this.icon});
+  const _StatusBadge({required this.color, required this.label});
   final Color color;
   final String label;
-  // Optional leading icon — when null we fall back to the original colored
-  // dot so existing callers keep their look.
-  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
     // Borderless soft-tint pill. The colour comes through as background fill
     // and as text — no border ring, no uppercase tracking.
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(kRadiusXl),
+        color: color.withValues(alpha: ThemeService.isDark ? 0.18 : 0.10),
+        borderRadius: BorderRadius.circular(kRadiusPill),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: Icon(icon, size: 12, color: color),
-            )
-          else ...[
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 6),
-          ],
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
           Text(
             label,
             style: TextStyle(
               color: color,
-              fontWeight: FontWeight.w600,
-              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              fontSize: 10.5,
             ),
           ),
         ],
@@ -907,28 +785,43 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-class _OrderDetailSheet extends StatefulWidget {
-  const _OrderDetailSheet({
+class _OrderDetailScreen extends StatefulWidget {
+  const _OrderDetailScreen({
     required this.order,
-    required this.controller,
     required this.fmt,
     required this.dateFmt,
     required this.statusColor,
     required this.statusLabel,
   });
   final SaleOrder order;
-  final ScrollController controller;
   final NumberFormat fmt;
   final DateFormat dateFmt;
   final Color statusColor;
   final String statusLabel;
 
   @override
-  State<_OrderDetailSheet> createState() => _OrderDetailSheetState();
+  State<_OrderDetailScreen> createState() => _OrderDetailScreenState();
 }
 
-class _OrderDetailSheetState extends State<_OrderDetailSheet> {
+class _OrderDetailScreenState extends State<_OrderDetailScreen> {
   bool _busy = false;
+
+  double get _lineSubtotal {
+    var sum = 0.0;
+    for (final item in widget.order.items) {
+      sum += item.subtotal;
+    }
+    return sum;
+  }
+
+  double get _memberDiscountAmount {
+    final pct = widget.order.customer?.discountPct ?? 0;
+    if (pct <= 0) return 0;
+    return _lineSubtotal * (pct / 100);
+  }
+
+  String _pctLabel(double pct) =>
+      pct == pct.toInt() ? pct.toInt().toString() : pct.toStringAsFixed(1);
 
   Future<void> _doAction(String action) async {
     final isCancel = action == 'cancel';
@@ -1029,6 +922,70 @@ class _OrderDetailSheetState extends State<_OrderDetailSheet> {
     }
   }
 
+  // Hard-delete (web parity) — removes the order entirely instead of
+  // setting status=CANCELLED. Only available on PENDING orders that have
+  // not been settled at the cashier.
+  Future<void> _doDelete() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ລົບ Order'),
+        content: Text(
+          'ຕ້ອງການລົບ Order #${widget.order.id} ຖາວອນ?\n'
+          'ຂໍ້ມູນຈະບໍ່ສາມາດກູ້ຄືນໄດ້.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('ບໍ່'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('ລົບຖາວອນ'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await AppScope.of(context).api.deleteOrder(widget.order.id);
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ລົບ Order ສຳເລັດ ✓'),
+          behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.all(12),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('ຜິດພາດ: ${e.message}'),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(12),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('ຜິດພາດ: $e'),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(12),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final order = widget.order;
@@ -1036,30 +993,127 @@ class _OrderDetailSheetState extends State<_OrderDetailSheet> {
     final dateFmt = widget.dateFmt;
     final statusColor = widget.statusColor;
     final statusLabel = widget.statusLabel;
-    final controller = widget.controller;
+    final customer = order.customer;
+    final discountPct = customer?.discountPct ?? 0;
+    final memberDiscount = _memberDiscountAmount;
+    final extraDiscount = order.extraDiscount;
+    final pointBalance = customer?.pointBalance ?? 0;
+    final hasBenefits =
+        discountPct > 0 ||
+        memberDiscount > 0 ||
+        extraDiscount > 0 ||
+        pointBalance > 0;
     final docLabel = order.docNo?.trim().isNotEmpty == true
         ? order.docNo!
         : '#${order.id.toUpperCase()}';
-    return Column(
-      children: [
-        const SizedBox(height: 8),
-        Container(
-          width: 40,
-          height: 4,
-          decoration: BoxDecoration(
-            color: AppColors.border,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        Expanded(
-          child: ListView(
-            controller: controller,
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-            children: [
-              _sectionLabel('ORDER DETAIL'),
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: premiumAppBar(context, docLabel),
+      body: TabletConstrain(
+        maxWidth: 900,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          children: [
+            _sectionLabel('ORDER DETAIL'),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: AppColors.cardBg,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          order.customer?.name ?? '—',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 19,
+                          ),
+                        ),
+                      ),
+                      _StatusBadge(color: statusColor, label: statusLabel),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Text(
+                        docLabel,
+                        style: const TextStyle(
+                          color: Color(0xFFDC2626),
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      Text(
+                        '   ·   ',
+                        style: TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                      Text(
+                        dateFmt.format(order.createdAt.toLocal()),
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (order.customer?.phone != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      order.customer!.phone!,
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                  if (order.salesperson != null) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.badge_outlined,
+                          size: 14,
+                          color: AppColors.gold,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'ພະນັກງານຂາຍ: ${order.salesperson!.displayName}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            if (hasBenefits) ...[
+              _sectionLabel('ສ່ວນຫຼຸດ / ແຕ້ມສະສົມ'),
               const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.all(18),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: AppColors.cardBg,
                   borderRadius: BorderRadius.circular(14),
@@ -1068,216 +1122,245 @@ class _OrderDetailSheetState extends State<_OrderDetailSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            order.customer?.name ?? '—',
-                            style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 19,
-                            ),
-                          ),
-                        ),
-                        _StatusBadge(color: statusColor, label: statusLabel),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Text(
-                          docLabel,
-                          style: const TextStyle(
-                            color: Color(0xFFDC2626),
-                            fontFamily: 'monospace',
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        Text(
-                          '   ·   ',
-                          style: TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 12,
-                          ),
-                        ),
-                        Text(
-                          dateFmt.format(order.createdAt.toLocal()),
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (order.customer?.phone != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        order.customer!.phone!,
-                        style: TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 12,
-                        ),
+                    if (discountPct > 0)
+                      _kvRow('ສ່ວນຫຼຸດສະມາຊິກ', '${_pctLabel(discountPct)}%'),
+                    if (memberDiscount > 0)
+                      _kvRow(
+                        'ມູນຄ່າສ່ວນຫຼຸດ',
+                        '−${fmt.format(memberDiscount)} ກີບ',
                       ),
-                    ],
-                    if (order.salesperson != null) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.badge_outlined,
-                            size: 14,
-                            color: AppColors.gold,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              'ພະນັກງານຂາຍ: ${order.salesperson!.displayName}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
+                    if (extraDiscount > 0)
+                      _kvRow(
+                        'ສ່ວນຫຼຸດທ້າຍບິນ',
+                        '−${fmt.format(extraDiscount)} ກີບ',
                       ),
-                    ],
+                    if (pointBalance > 0)
+                      _kvRow('ແຕ້ມສະສົມ', '${fmt.format(pointBalance)} ແຕ້ມ'),
                   ],
                 ),
               ),
               const SizedBox(height: 18),
-              _sectionLabel('ITEMS'),
+            ],
+            if (order.settlement != null) ...[
+              _sectionLabel('ການຮັບເງິນ'),
               const SizedBox(height: 8),
               Container(
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: AppColors.cardBg,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: AppColors.border),
                 ),
                 child: Column(
-                  children: List.generate(order.items.length, (i) {
-                    final it = order.items[i];
-                    final isLast = i == order.items.length - 1;
-                    return Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(
-                            color: isLast
-                                ? Colors.transparent
-                                : AppColors.divider,
-                          ),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  it.product?.name ?? it.productId,
-                                  style: TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  '${fmt.format(it.unitPrice)} × ${it.quantity}',
-                                  style: TextStyle(
-                                    color: AppColors.textMuted,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            fmt.format(it.subtotal),
-                            style: TextStyle(
-                              color: AppColors.goldBright,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                ),
-              ),
-              const SizedBox(height: 18),
-              _sectionLabel('SUMMARY'),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: AppColors.gold.withValues(alpha: 0.3),
-                  ),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.cardElev,
-                      AppColors.gold.withValues(alpha: 0.08),
-                    ],
-                  ),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        'TOTAL',
-                        style: TextStyle(
-                          color: AppColors.gold,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                          letterSpacing: 1.6,
-                        ),
-                      ),
+                    _kvRow(
+                      'ໃບຮັບເງິນ',
+                      order.settlement!.receiptNo,
+                      mono: true,
                     ),
-                    Text(
-                      fmt.format(order.total),
-                      style: TextStyle(
-                        color: AppColors.goldBright,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 26,
-                        letterSpacing: -0.3,
+                    if (order.settlement!.settledAt != null)
+                      _kvRow(
+                        'ວັນ-ເວລາ',
+                        dateFmt.format(order.settlement!.settledAt!.toLocal()),
                       ),
-                    ),
-                    const SizedBox(width: 5),
-                    Padding(
-                      padding: EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        'ກີບ',
-                        style: TextStyle(
-                          color: AppColors.gold,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                        ),
-                      ),
+                    _kvRow('ຜູ້ຮັບເງິນ', order.settlement!.cashierName ?? '—'),
+                    _kvRow(
+                      'ປະເພດການຮັບເງິນ',
+                      order.settlement!.paymentTypeLabel,
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 18),
-              _buildActions(order.status),
             ],
-          ),
+            // ================= REDESIGNED ITEMS SECTION =================
+            _sectionLabel('ITEMS'),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.cardBg,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: order.items.length,
+                separatorBuilder: (_, __) => Divider(height: 0, thickness: 1, color: AppColors.divider),
+                itemBuilder: (context, i) {
+                  final item = order.items[i];
+                  final product = item.product;
+                  final hasImage = product?.imageUrl != null && product!.imageUrl!.trim().isNotEmpty;
+
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ----- Product image (or placeholder) -----
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            width: 56,
+                            height: 56,
+                            color: AppColors.primary.withValues(alpha: 0.08),
+                            child: hasImage
+                                ? Image.network(
+                                    product.imageUrl!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => _itemPlaceholder(),
+                                  )
+                                : _itemPlaceholder(),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // ----- Product details -----
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      product?.name ?? item.productId,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: AppColors.textPrimary,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 14,
+                                        height: 1.3,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // Quantity badge
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      'x${item.quantity}',
+                                      style: TextStyle(
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              if (product?.id != null && product!.id.isNotEmpty)
+                                Text(
+                                  product.id,
+                                  style: TextStyle(
+                                    color: AppColors.textMuted,
+                                    fontSize: 11,
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                              const SizedBox(height: 6),
+                              // Price & quantity line (unit price × quantity)
+                              Row(
+                                children: [
+                                  Text(
+                                    fmt.format(item.unitPrice),
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  Text(' × ', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                                  Text(
+                                    item.quantity.toString(),
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  // Subtotal (bold, gold‑accented)
+                                  Text(
+                                    fmt.format(item.subtotal),
+                                    style: TextStyle(
+                                      color: AppColors.goldBright,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 18),
+            // ================= END REDESIGNED ITEMS SECTION =================
+            _sectionLabel('SUMMARY'),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'TOTAL',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                        letterSpacing: 1.6,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    fmt.format(order.total),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 26,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      'ກີບ',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            _buildActions(order.status),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -1341,34 +1424,119 @@ class _OrderDetailSheetState extends State<_OrderDetailSheet> {
       );
     }
     final isCancelled = status == 'CANCELLED';
-    final actionLabel = isCancelled ? 'ກູ້ Order ກັບຄືນ' : 'ຍົກເລີກ Order';
-    final actionColor = isCancelled ? AppColors.gold : AppColors.danger;
-    final actionIcon = isCancelled ? Icons.refresh : Icons.cancel_outlined;
-    final actionKey = isCancelled ? 'reopen' : 'cancel';
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton.icon(
-        onPressed: _busy ? null : () => _doAction(actionKey),
-        icon: _busy
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
+    final isPending = status == 'PENDING';
+
+    return Column(
+      children: [
+        // PENDING orders get the edit button (opens CreateOrder pre-filled).
+        if (isPending && !_busy) ...[
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () async {
+                final changed = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(
+                    builder: (_) => CreateOrderScreen(editOrder: widget.order),
+                  ),
+                );
+                if (changed == true && mounted) {
+                  Navigator.of(context).pop(true);
+                }
+              },
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('ແກ້ໄຂ Order'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              )
-            : Icon(actionIcon, size: 18),
-        label: Text(_busy ? 'ກຳລັງປະມວນຜົນ…' : actionLabel),
-        style: FilledButton.styleFrom(
-          backgroundColor: actionColor,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+                textStyle: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
           ),
-          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+          const SizedBox(height: 10),
+        ],
+        // Primary destructive / restore action:
+        //   PENDING   → ລົບ Order (hard delete via /api/cashier/orders/X)
+        //   CANCELLED → ກູ້ Order ກັບຄືນ (status PATCH reopen)
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _busy
+                ? null
+                : (isCancelled
+                      ? () => _doAction('reopen')
+                      : (isPending ? _doDelete : null)),
+            icon: _busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Icon(
+                    isCancelled ? Icons.refresh : Icons.delete_outline,
+                    size: 18,
+                  ),
+            label: Text(
+              _busy
+                  ? 'ກຳລັງປະມວນຜົນ…'
+                  : (isCancelled ? 'ກູ້ Order ກັບຄືນ' : 'ລົບ Order'),
+            ),
+            style: FilledButton.styleFrom(
+              backgroundColor: isCancelled ? AppColors.gold : AppColors.danger,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
         ),
+      ],
+    );
+  }
+
+  Widget _kvRow(String label, String value, {bool mono = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                fontFamily: mono ? 'monospace' : null,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1397,6 +1565,17 @@ class _OrderDetailSheetState extends State<_OrderDetailSheet> {
       ],
     );
   }
+
+  // Helper for product image placeholder
+  Widget _itemPlaceholder() {
+    return Center(
+      child: Icon(
+        Icons.inventory_2_outlined,
+        size: 28,
+        color: AppColors.textMuted.withValues(alpha: 0.5),
+      ),
+    );
+  }
 }
 
 class _EmptyOrders extends StatelessWidget {
@@ -1404,70 +1583,10 @@ class _EmptyOrders extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 88,
-              height: 88,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.gold.withValues(alpha: 0.18),
-                    AppColors.gold.withValues(alpha: 0.05),
-                  ],
-                ),
-                border: Border.all(
-                  color: AppColors.gold.withValues(alpha: 0.4),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.gold.withValues(alpha: 0.15),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Icon(
-                Icons.add_shopping_cart,
-                color: AppColors.gold,
-                size: 38,
-              ),
-            ),
-            const SizedBox(height: 18),
-            Text(
-              'ຍັງບໍ່ມີ Order',
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w900,
-                fontSize: 18,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'ກົດປຸ່ມ "ສ້າງ Order" ດ້ານລຸ່ມ\nເພື່ອເລີ່ມຂາຍບິນທຳອິດ',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 13,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Icon(
-              Icons.arrow_downward_rounded,
-              color: AppColors.gold,
-              size: 22,
-            ),
-          ],
-        ),
-      ),
+    return const EmptyStateView(
+      icon: Icons.receipt_long_outlined,
+      title: 'ຍັງບໍ່ມີ Order',
+      subtitle: 'ກົດປຸ່ມ + ດ້ານລຸ່ມຂວາເພື່ອສ້າງບິນທຳອິດ',
     );
   }
 }
@@ -1500,11 +1619,7 @@ class _NoMatchView extends StatelessWidget {
             const SizedBox(height: 14),
             OutlinedButton.icon(
               onPressed: onClear,
-              icon: Icon(
-                Icons.clear_all,
-                size: 17,
-                color: AppColors.gold,
-              ),
+              icon: Icon(Icons.clear_all, size: 17, color: AppColors.gold),
               label: Text(
                 'Clear filters',
                 style: TextStyle(
@@ -1549,20 +1664,13 @@ class _ErrorCard extends StatelessWidget {
               color: const Color(0xFFEF4444).withValues(alpha: 0.14),
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              Icons.cloud_off,
-              size: 26,
-              color: Color(0xFFEF4444),
-            ),
+            child: Icon(Icons.cloud_off, size: 26, color: Color(0xFFEF4444)),
           ),
           const SizedBox(height: 12),
           Text(
             message,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 14),
           FilledButton.icon(

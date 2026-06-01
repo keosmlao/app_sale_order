@@ -1,15 +1,29 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show debugPrint;
 import '../models/models.dart';
+
+// Promotion application engine. Pure function: given a set of cart lines
+// and the active promotion definitions, return the same lines with their
+// `promoDiscount` (KIP), `promoLabel`, and stacking flags populated.
+//
+// Mirrors web/src/lib/promotions-engine.ts — keep behavioural parity so
+// the app and POS show the same numbers and never raise a stale UI against
+// what the server will recompute at submit time.
 
 class EngineLine {
   final String productId;
   final int quantity;
   final double price;             // unit price KIP (original)
   final double gross;             // price * quantity
-  final double customerDiscount;   // customer discount amount (standing discount/special price)
+  double customerDiscount;  // customer discount amount (standing discount/special price)
   double promoDiscount;           // promotional discount amount (accumulated)
   String promoLabel;              // promotional label (accumulated)
   double amount;                  // net amount: gross - customerDiscount - promoDiscount
+  // Engine sets these to FALSE when a touching promo opts out. Downstream
+  // (loyalty points, member %) checks each independently — a single
+  // opt-out wins, no later stacking promo can re-enable it.
+  bool awardsPoints;
+  bool awardsMemberDiscount;
 
   EngineLine({
     required this.productId,
@@ -19,24 +33,36 @@ class EngineLine {
     this.promoDiscount = 0.0,
     this.promoLabel = '',
     double? amount,
+    this.awardsPoints = true,
+    this.awardsMemberDiscount = true,
   })  : gross = price * quantity,
         amount = amount ?? (price * quantity - customerDiscount);
 }
 
 int? timeToMinutes(String? timeStr) {
   if (timeStr == null || timeStr.isEmpty) return null;
-  final parts = timeStr.split(':');
-  if (parts.length < 2) return null;
-  final hours = int.tryParse(parts[0]) ?? 0;
-  final minutes = int.tryParse(parts[1]) ?? 0;
-  return hours * 60 + minutes;
+  var s = timeStr.trim();
+  if (s.contains('T')) {
+    final parts = s.split('T');
+    if (parts.length > 1) {
+      s = parts[1];
+    }
+  }
+  final regex = RegExp(r'^(\d{1,2}):(\d{2})');
+  final match = regex.firstMatch(s);
+  if (match != null) {
+    final hours = int.tryParse(match.group(1)!) ?? 0;
+    final minutes = int.tryParse(match.group(2)!) ?? 0;
+    return hours * 60 + minutes;
+  }
+  return null;
 }
 
 bool isPromoActiveNow(Promotion p, DateTime now) {
   if (!p.isActive) return false;
   if (p.startAt != null && p.startAt!.isAfter(now)) return false;
   if (p.endAt != null && p.endAt!.isBefore(now)) return false;
-  
+
   final fromMin = timeToMinutes(p.timeFrom);
   final toMin = timeToMinutes(p.timeTo);
   if (fromMin != null && toMin != null) {
@@ -56,6 +82,11 @@ void _pushLabel(EngineLine line, String label) {
       : label;
 }
 
+void _applyStackingFlag(EngineLine line, Promotion promo) {
+  if (!promo.awardsPoints) line.awardsPoints = false;
+  if (!promo.awardsMemberDiscount) line.awardsMemberDiscount = false;
+}
+
 List<EngineLine> applyPromotions(
   List<EngineLine> lines,
   List<Promotion> promotions,
@@ -67,7 +98,11 @@ List<EngineLine> applyPromotions(
     byCode.putIfAbsent(line.productId, () => []).add(line);
   }
 
-  // 1. Fixed price for a period (unconditional — only the time window gates it).
+  // 1. Fixed price for a period (unconditional — only the time window
+  //    gates it). The delta can be negative when admin set the promo
+  //    price ABOVE the catalog (bundle-style markup); we still force the
+  //    new price either way — the max(0, …) at the bottom keeps the
+  //    final amount non-negative.
   for (final p in active) {
     if (p.promoType != 'fixed_price_period') continue;
     final code = p.triggerItemCode?.trim();
@@ -75,10 +110,10 @@ List<EngineLine> applyPromotions(
     if (code == null || code.isEmpty || fixed < 0) continue;
     final matches = byCode[code] ?? [];
     for (final line in matches) {
-      if (line.price <= fixed) continue;
-      final savingsPerUnit = line.price - fixed;
-      line.promoDiscount += savingsPerUnit * line.quantity;
+      final deltaPerUnit = line.price - fixed;
+      line.promoDiscount += deltaPerUnit * line.quantity;
       _pushLabel(line, p.name);
+      _applyStackingFlag(line, p);
     }
   }
 
@@ -88,27 +123,35 @@ List<EngineLine> applyPromotions(
     final triggerCode = p.triggerItemCode?.trim();
     final bonusCode = p.bonusItemCode?.trim();
     final bonusPrice = p.bonusPriceKip ?? 0.0;
-    if (triggerCode == null || triggerCode.isEmpty || bonusCode == null || bonusCode.isEmpty) continue;
+    if (triggerCode == null ||
+        triggerCode.isEmpty ||
+        bonusCode == null ||
+        bonusCode.isEmpty) {
+      continue;
+    }
     final triggerLines = byCode[triggerCode] ?? [];
     final bonusLines = byCode[bonusCode] ?? [];
     if (triggerLines.isEmpty || bonusLines.isEmpty) continue;
     final triggerQty = triggerLines.fold<int>(0, (s, l) => s + l.quantity);
     if (triggerQty <= 0) continue;
-    
+
     int remaining = triggerQty;
     for (final bonus in bonusLines) {
       if (remaining <= 0) break;
       final eligible = math.min(remaining, bonus.quantity);
-      if (eligible <= 0 || bonus.price <= bonusPrice) continue;
-      final savingsPerUnit = bonus.price - bonusPrice;
-      bonus.promoDiscount += savingsPerUnit * eligible;
+      if (eligible <= 0) continue;
+      final deltaPerUnit = bonus.price - bonusPrice;
+      bonus.promoDiscount += deltaPerUnit * eligible;
       _pushLabel(bonus, p.name);
+      _applyStackingFlag(bonus, p);
       remaining -= eligible;
     }
   }
 
-  // 3. BOGO: every `triggerQty` units of trigger is priced at the configured
-  //    main-item price, and `bonusQty` units of bonus are free.
+  // 3. BOGO: every `triggerQty` units of the trigger is priced at the
+  //    configured `bonusPriceKip` (admin enters the trigger's promo
+  //    price in the "ລາຄາສິນຄ້າທີ່ຕ້ອງຊື້" field; 0 means the trigger
+  //    is itself free). The matching bonus units are always 100% off.
   for (final p in active) {
     if (p.promoType != 'bogo') continue;
     final triggerCode = p.triggerItemCode?.trim();
@@ -116,31 +159,54 @@ List<EngineLine> applyPromotions(
     final triggerQty = (p.triggerQty ?? 0.0).toInt();
     final bonusQty = (p.bonusQty ?? 0.0).toInt();
     final triggerPromoPrice = p.bonusPriceKip ?? 0.0;
-    
+
     if (triggerCode == null ||
         triggerCode.isEmpty ||
         bonusCode == null ||
         bonusCode.isEmpty ||
         triggerQty <= 0 ||
         bonusQty <= 0 ||
-        triggerPromoPrice <= 0) {
+        triggerPromoPrice < 0) {
+      debugPrint(
+        '[Promo] engine BOGO "${p.name}" skip: invalid config '
+        '(trigger=$triggerCode×$triggerQty bonus=$bonusCode×$bonusQty '
+        'triggerPromoPrice=$triggerPromoPrice)',
+      );
       continue;
     }
     final triggerLines = byCode[triggerCode] ?? [];
     final bonusLines = byCode[bonusCode] ?? [];
-    if (triggerLines.isEmpty || bonusLines.isEmpty) continue;
+    if (triggerLines.isEmpty || bonusLines.isEmpty) {
+      debugPrint(
+        '[Promo] engine BOGO "${p.name}" skip: '
+        'triggerLines=${triggerLines.length} bonusLines=${bonusLines.length} '
+        '(cart keys=${byCode.keys.join(",")})',
+      );
+      continue;
+    }
     final cartTriggerQty = triggerLines.fold<int>(0, (s, l) => s + l.quantity);
     final sets = cartTriggerQty ~/ triggerQty;
-    if (sets <= 0) continue;
+    if (sets <= 0) {
+      debugPrint(
+        '[Promo] engine BOGO "${p.name}" skip: '
+        'cartTriggerQty=$cartTriggerQty < triggerQty=$triggerQty',
+      );
+      continue;
+    }
+    debugPrint(
+      '[Promo] engine BOGO "${p.name}" apply: sets=$sets '
+      'trigger=$triggerCode (cartQty=$cartTriggerQty, promoPrice=$triggerPromoPrice) '
+      'bonus=$bonusCode',
+    );
 
     int triggerBudget = sets * triggerQty;
     for (final trigger in triggerLines) {
       if (triggerBudget <= 0) break;
       final promoOnThisLine = math.min(triggerBudget, trigger.quantity);
-      if (trigger.price > triggerPromoPrice) {
-        trigger.promoDiscount += promoOnThisLine * (trigger.price - triggerPromoPrice);
-        _pushLabel(trigger, p.name);
-      }
+      final deltaPerUnit = trigger.price - triggerPromoPrice;
+      trigger.promoDiscount += promoOnThisLine * deltaPerUnit;
+      _pushLabel(trigger, p.name);
+      _applyStackingFlag(trigger, p);
       triggerBudget -= promoOnThisLine;
     }
 
@@ -150,6 +216,7 @@ List<EngineLine> applyPromotions(
       final freeOnThisLine = math.min(freeBudget, bonus.quantity);
       bonus.promoDiscount += freeOnThisLine * bonus.price;
       _pushLabel(bonus, p.name);
+      _applyStackingFlag(bonus, p);
       freeBudget -= freeOnThisLine;
     }
   }

@@ -200,110 +200,61 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      color: AppColors.gold,
-      backgroundColor: AppColors.cardBg,
-      onRefresh: _reload,
-      child: TabletConstrain(
-        maxWidth: 840,
-        child: Column(
-          children: [
-            _buildFilters(),
-            Expanded(
-              child: FutureBuilder<List<PriceRequest>>(
-                future: _future,
-                builder: (context, snap) {
-                  if (snap.connectionState != ConnectionState.done) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snap.hasError) {
-                    return ListView(
-                      padding: const EdgeInsets.all(20),
-                      children: [
-                        const SizedBox(height: 60),
-                        _ErrorCard(
-                          message: snap.error.toString(),
-                          onRetry: _reload,
-                        ),
-                      ],
-                    );
-                  }
-                  final list = snap.data ?? [];
-                  if (list.isEmpty) return _buildEmpty();
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 110),
-                    itemCount: list.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) => FadeInSlide(
-                      duration: Duration(milliseconds: 300 + (i < 6 ? i * 80 : 480)),
-                      delay: Duration(milliseconds: i < 6 ? i * 50 : 300),
-                      child: _buildCard(list[i]),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('ການອະນຸມັດລາຄາ'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
       ),
-    );
-  }
-
-  Widget _buildFilters() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.divider)),
-      ),
-      child: Row(
-        children: [
-          _filterPill('ລໍຖ້າ', 'pending', AppColors.warning),
-          const SizedBox(width: 6),
-          _filterPill('ອະນຸມັດແລ້ວ', 'approved', AppColors.success),
-          const SizedBox(width: 6),
-          _filterPill('ປະຕິເສດ', 'rejected', AppColors.danger),
-        ],
-      ),
-    );
-  }
-
-  Widget _filterPill(String label, String key, Color color) {
-    final selected = _statusFilter == key;
-    return Expanded(
-      child: Material(
-        color: selected ? color.withValues(alpha: 0.15) : AppColors.slate100,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          onTap: () => _setStatus(key),
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: selected
-                    ? color.withValues(alpha: 0.5)
-                    : AppColors.border,
-              ),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+      body: SafeArea(
+        top: false,
+        child: RefreshIndicator(
+          color: AppColors.primary,
+          backgroundColor: AppColors.cardBg,
+          onRefresh: _reload,
+          child: TabletConstrain(
+            maxWidth: 840,
+            child: Column(
               children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: selected ? color : AppColors.slate500,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
+                _buildFilters(),
+                Expanded(
+                  child: FutureBuilder<List<PriceRequest>>(
+                    future: _future,
+                    builder: (context, snap) {
+                      if (snap.connectionState != ConnectionState.done) {
+                        return const BrandedSpinner(
+                            label: 'ກຳລັງໂຫຼດຄຳຂໍ…');
+                      }
+                      if (snap.hasError) {
+                        return ListView(
+                          padding: const EdgeInsets.all(kSpace5),
+                          children: [
+                            const SizedBox(height: 60),
+                            _ErrorCard(
+                              message: snap.error.toString(),
+                              onRetry: _reload,
+                            ),
+                          ],
+                        );
+                      }
+                      final list = snap.data ?? [];
+                      if (list.isEmpty) return _buildEmpty();
+                      return ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(
+                            kSpace3, kSpace2, kSpace3, 110),
+                        itemCount: list.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(height: kSpace2),
+                        itemBuilder: (_, i) => FadeInSlide(
+                          duration: Duration(
+                            milliseconds: 300 + (i < 6 ? i * 80 : 480),
+                          ),
+                          delay: Duration(milliseconds: i < 6 ? i * 50 : 300),
+                          child: _buildCard(list[i]),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ],
@@ -314,36 +265,58 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
     );
   }
 
-  Widget _buildEmpty() {
-    final label = _statusFilter == 'pending'
-        ? 'ບໍ່ມີຄຳຂໍລໍຖ້າ — ດີຫຼາຍ! 🎉'
-        : _statusFilter == 'approved'
-            ? 'ຍັງບໍ່ມີຄຳຂໍທີ່ອະນຸມັດ'
-            : 'ຍັງບໍ່ມີຄຳຂໍທີ່ປະຕິເສດ';
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.check_circle_outline,
-              size: 64,
-              color: AppColors.success.withValues(alpha: 0.6),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-              ),
-            ),
-          ],
-        ),
+  Widget _buildFilters() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, kSpace3, 0, kSpace3),
+      child: ChipFilterRow<String>(
+        value: _statusFilter,
+        onChanged: _setStatus,
+        items: const [
+          (
+            value: 'pending',
+            label: 'ລໍຖ້າ',
+            count: null,
+            color: AppColors.warning,
+          ),
+          (
+            value: 'approved',
+            label: 'ອະນຸມັດແລ້ວ',
+            count: null,
+            color: AppColors.success,
+          ),
+          (
+            value: 'rejected',
+            label: 'ປະຕິເສດ',
+            count: null,
+            color: AppColors.danger,
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildEmpty() {
+    final (icon, title, subtitle) = switch (_statusFilter) {
+      'pending' => (
+          Icons.check_circle_outline_rounded,
+          'ບໍ່ມີຄຳຂໍລໍຖ້າ',
+          'ດີຫຼາຍ — ບໍ່ມີລາຍການຄ້າງອະນຸມັດ 🎉',
+        ),
+      'approved' => (
+          Icons.thumb_up_outlined,
+          'ຍັງບໍ່ມີຄຳຂໍທີ່ອະນຸມັດ',
+          'ຄຳຂໍທີ່ອະນຸມັດແລ້ວຈະຂຶ້ນຢູ່ນີ້',
+        ),
+      _ => (
+          Icons.thumb_down_outlined,
+          'ຍັງບໍ່ມີຄຳຂໍທີ່ປະຕິເສດ',
+          'ຄຳຂໍທີ່ປະຕິເສດແລ້ວຈະຂຶ້ນຢູ່ນີ້',
+        ),
+    };
+    return EmptyStateView(
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
     );
   }
 
@@ -354,15 +327,16 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
     final cartLabel = req.isStandalone
         ? 'ກ່ອນ Order'
         : '#${req.cartNumber}';
-    return GlassCard(
-      radius: kRadiusMd,
+    return SurfaceCard(
       padding: EdgeInsets.zero,
+      accent: color,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header — glowing status bar + customer + cart/standalone + status pill.
+          // Header — customer + cart/standalone + status pill.
           Container(
-            padding: const EdgeInsets.fromLTRB(14, 12, 12, 10),
+            padding: const EdgeInsets.fromLTRB(
+                kSpace4, kSpace3, kSpace3, kSpace3),
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(color: AppColors.divider),
@@ -371,21 +345,14 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Container(
-                  width: 4,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: color.withValues(alpha: 0.55),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
+                IconBubble(
+                  icon: req.isStandalone
+                      ? Icons.price_change_rounded
+                      : Icons.shopping_cart_rounded,
+                  color: color,
+                  size: BubbleSize.md,
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: kSpace3),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -458,16 +425,15 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: color.withValues(alpha: 0.5)),
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(kRadiusSm),
                   ),
                   child: Text(
                     _statusLabel(req.status),
                     style: TextStyle(
                       color: color,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
                       letterSpacing: 0.3,
                     ),
                   ),
@@ -620,71 +586,51 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
             ),
           ),
           if (pending)
-            Container(
-              decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: AppColors.slate100)),
-              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
               child: Row(
                 children: [
                   Expanded(
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () => _decide(req, 'reject'),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          alignment: Alignment.center,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.close,
-                                color: AppColors.danger,
-                                size: 16,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                'ປະຕິເສດ',
-                                style: TextStyle(
-                                  color: AppColors.danger,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
+                    child: OutlinedButton.icon(
+                      onPressed: () => _decide(req, 'reject'),
+                      icon: const Icon(Icons.close, size: 18),
+                      label: const Text(
+                        'ປະຕິເສດ',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.danger,
+                        side: BorderSide(
+                          color: AppColors.danger.withValues(alpha: 0.4),
+                        ),
+                        minimumSize: const Size(0, 44),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(kRadiusMd),
                         ),
                       ),
                     ),
                   ),
-                  Container(width: 1, height: 36, color: AppColors.slate100),
+                  const SizedBox(width: 10),
                   Expanded(
-                    child: Material(
-                      color: AppColors.success.withValues(alpha: 0.08),
-                      child: InkWell(
-                        onTap: () => _decide(req, 'approve'),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          alignment: Alignment.center,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.check,
-                                color: AppColors.success,
-                                size: 16,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                'ອະນຸມັດ',
-                                style: TextStyle(
-                                  color: AppColors.success,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
+                    child: FilledButton.icon(
+                      onPressed: () => _decide(req, 'approve'),
+                      icon: const Icon(Icons.check, size: 18),
+                      label: const Text(
+                        'ອະນຸມັດ',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.success,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(0, 44),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(kRadiusMd),
                         ),
                       ),
                     ),

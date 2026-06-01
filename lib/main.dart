@@ -65,7 +65,7 @@ class _OdgSaleAppState extends State<OdgSaleApp> {
             themeMode: currentMode == AppThemeMode.dark ? ThemeMode.dark : ThemeMode.light,
             builder: (context, child) {
               final media = MediaQuery.of(context);
-              return GlassBackground(
+              return AmbientGradientBackground(
                 child: MediaQuery(
                   data: media.copyWith(textScaler: TextScaler.linear(0.94)),
                   child: child ?? const SizedBox.shrink(),
