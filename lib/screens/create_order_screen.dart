@@ -2063,7 +2063,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     final dlv = _selectedDelivery;
     final hasNote = _note.trim().isNotEmpty;
     final hasExtra = _appliedExtraDiscount > 0;
-    final ready = c != null && selected.isNotEmpty && dlv != null;
 
     // Guided, numbered order flow — each step shows a ✓ once satisfied so the
     // cashier always knows what's left before the bill can be created.
@@ -2100,15 +2099,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       label: 'ສ່ວນຫຼຸດ ແລະ ໝາຍເຫດ',
       child: _compactSettingsRow(),
     );
-    final summaryStep = PageSection(
-      step: 5,
-      complete: ready,
-      icon: Icons.receipt_long_rounded,
-      accent: AppColors.primary,
-      label: 'ສະຫຼຸບ',
-      child: _summarySection(),
-    );
-
     // On a phone the five steps are one column, which is the whole screen.
     // On an 11" tablet in landscape that column leaves two thirds of the
     // glass empty and pushes the total below the fold, so the sale splits
@@ -2126,8 +2116,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           deliveryStep,
           const SizedBox(height: kSpace4),
           settingsStep,
-          const SizedBox(height: kSpace4),
-          summaryStep,
         ],
       );
     }
@@ -2227,8 +2215,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: kSpace3),
-                    _railBlock('ສະຫຼຸບ', _summarySection()),
                   ],
                 ),
               ),
@@ -2789,9 +2775,25 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Persistent grand-total readout — promoted out of the hero
-          // card so the cashier always sees the bill amount without
-          // switching to the ສະຫຼຸບ tab.
+          // The breakdown sits with the total it explains. It used to be a
+          // section of its own, directly above a footer printing the same
+          // figure — the bill amount written twice, one line apart.
+          //
+          // Only lines that say something appear: a subtotal that differs
+          // from the total, a discount, a rounding, points actually earned.
+          // With none of them this collapses to nothing and the footer is
+          // the plain total it always was.
+          ...() {
+            final rows = _summaryDetailRows();
+            if (rows.isEmpty) return <Widget>[];
+            return <Widget>[
+              ...rows,
+              const SizedBox(height: kSpace3),
+              Divider(height: 1, color: AppColors.border),
+              const SizedBox(height: kSpace3),
+            ];
+          }(),
+          // Persistent grand-total readout, always in view.
           Row(
             children: [
               Column(
@@ -3597,107 +3599,68 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     return merged.take(60).toList();
   }
 
-  Widget _summarySection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _summaryRow('Subtotal', '${_moneyFmt.format(_lineNetTotal)} ກີບ'),
-        if (_discountPct > 0) ...[
-          const SizedBox(height: 6),
-          _summaryRow(
-            'ສ່ວນຫຼຸດສະມາຊິກ ${_discountPct == _discountPct.toInt() ? _discountPct.toInt() : _discountPct.toStringAsFixed(1)}%',
-            '−${_moneyFmt.format(_discountAmount)} ກີບ',
-          ),
-        ],
-        if (_totalPromoDiscount > 0) ...[
-          const SizedBox(height: 6),
-          _summaryRow(
-            'ສ່ວນຫຼຸດໂປຣໂມຊັ່ນ',
-            '−${_moneyFmt.format(_totalPromoDiscount)} ກີບ',
-          ),
-        ],
-        // Promotions are priced by the server. If that call failed, the
-        // figures above are whatever it last returned — say so rather than
-        // letting a stale discount pass for a current one. The bill itself
-        // is priced again at submit, so this is a display warning only.
-        if (_pricingOffline) ...[
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              const Icon(
-                Icons.cloud_off_rounded,
-                size: 14,
-                color: Colors.orange,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'ຕໍ່ເຊີບເວີບໍ່ໄດ້ — ສ່ວນຫຼຸດໂປຣໂມຊັ່ນອາດບໍ່ທັນສະໄໝ',
-                  style: const TextStyle(fontSize: 11, color: Colors.orange),
-                ),
-              ),
-            ],
-          ),
-        ],
-        if (_appliedExtraDiscount > 0) ...[
-          const SizedBox(height: 6),
-          _summaryRow(
-            'ສ່ວນຫຼຸດທ້າຍບິນ',
-            '−${_moneyFmt.format(_appliedExtraDiscount)} ກີບ',
-          ),
-        ],
-        if (_roundingAdjustment > 0) ...[
-          const SizedBox(height: 6),
-          _summaryRow(
-            'ປັດຂຶ້ນເປັນ 1,000',
-            '+${_moneyFmt.format(_roundingAdjustment)} ກີບ',
-          ),
-        ],
+  // The breakdown only — no grand total. The footer prints that, and a
+  // section repeating it directly above was the same figure twice.
+  List<Widget> _summaryDetailRows() {
+    return <Widget>[
+      _summaryRow('Subtotal', '${_moneyFmt.format(_lineNetTotal)} ກີບ'),
+      if (_discountPct > 0) ...[
         const SizedBox(height: 6),
         _summaryRow(
-          _loyaltyConfig.isActive
-              ? 'ໄດ້${_loyaltyConfig.pointName}'
-              : 'ສະສົມແຕ້ມ',
-          _loyaltyConfig.isActive
-              ? '${_fmt.format(_earnedPoints)} ແຕ້ມ'
-              : 'ປິດໃຊ້',
+          'ສ່ວນຫຼຸດສະມາຊິກ ${_discountPct == _discountPct.toInt() ? _discountPct.toInt() : _discountPct.toStringAsFixed(1)}%',
+          '−${_moneyFmt.format(_discountAmount)} ກີບ',
         ),
-        const SizedBox(height: kSpace3),
-        Divider(height: 1, color: AppColors.border),
-        const SizedBox(height: kSpace3),
+      ],
+      if (_totalPromoDiscount > 0) ...[
+        const SizedBox(height: 6),
+        _summaryRow(
+          'ສ່ວນຫຼຸດໂປຣໂມຊັ່ນ',
+          '−${_moneyFmt.format(_totalPromoDiscount)} ກີບ',
+        ),
+      ],
+      // Promotions are priced by the server. If that call failed, the
+      // figures above are whatever it last returned — say so rather than
+      // letting a stale discount pass for a current one. The bill itself
+      // is priced again at submit, so this is a display warning only.
+      if (_pricingOffline) ...[
+        const SizedBox(height: 6),
         Row(
           children: [
-            Text(
-              'ລວມທັງໝົດ',
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w900,
-                fontSize: 15,
-              ),
-            ),
-            const Spacer(),
-            Text(
-              _moneyFmt.format(_total),
-              style: TextStyle(
-                color: AppColors.primary,
-                fontWeight: FontWeight.w900,
-                fontSize: 18,
-                letterSpacing: -0.3,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              'ກີບ',
-              style: TextStyle(
-                color: AppColors.primary,
-                fontWeight: FontWeight.w800,
-                fontSize: 11,
+            const Icon(Icons.cloud_off_rounded, size: 14, color: Colors.orange),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'ຕໍ່ເຊີບເວີບໍ່ໄດ້ — ສ່ວນຫຼຸດໂປຣໂມຊັ່ນອາດບໍ່ທັນສະໄໝ',
+                style: const TextStyle(fontSize: 11, color: Colors.orange),
               ),
             ),
           ],
         ),
       ],
-    );
+      if (_appliedExtraDiscount > 0) ...[
+        const SizedBox(height: 6),
+        _summaryRow(
+          'ສ່ວນຫຼຸດທ້າຍບິນ',
+          '−${_moneyFmt.format(_appliedExtraDiscount)} ກີບ',
+        ),
+      ],
+      if (_roundingAdjustment > 0) ...[
+        const SizedBox(height: 6),
+        _summaryRow(
+          'ປັດຂຶ້ນເປັນ 1,000',
+          '+${_moneyFmt.format(_roundingAdjustment)} ກີບ',
+        ),
+      ],
+      const SizedBox(height: 6),
+      _summaryRow(
+        _loyaltyConfig.isActive
+            ? 'ໄດ້${_loyaltyConfig.pointName}'
+            : 'ສະສົມແຕ້ມ',
+        _loyaltyConfig.isActive
+            ? '${_fmt.format(_earnedPoints)} ແຕ້ມ'
+            : 'ປິດໃຊ້',
+      ),
+    ];
   }
 
   Future<void> _editExtraDiscount() async {
