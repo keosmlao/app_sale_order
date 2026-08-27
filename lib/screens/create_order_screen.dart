@@ -1831,56 +1831,112 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     final hasNote = _note.trim().isNotEmpty;
     final hasExtra = _appliedExtraDiscount > 0;
     final ready = c != null && selected.isNotEmpty && dlv != null;
+
     // Guided, numbered order flow — each step shows a ✓ once satisfied so the
     // cashier always knows what's left before the bill can be created.
-    return ListView(
-      key: const PageStorageKey('create-order-entry'),
-      padding: const EdgeInsets.fromLTRB(kSpace4, kSpace4, kSpace4, kSpace5),
+    final customerStep = PageSection(
+      step: 1,
+      complete: c != null,
+      icon: Icons.person_rounded,
+      accent: AppColors.primary,
+      label: 'ລູກຄ້າ',
+      child: _customerStepBody(),
+    );
+    final itemsStep = PageSection(
+      step: 2,
+      complete: selected.isNotEmpty,
+      icon: Icons.shopping_cart_rounded,
+      accent: AppColors.primary,
+      label: 'ສິນຄ້າ',
+      trailing: selected.isEmpty ? null : '${selected.length} ລາຍການ',
+      child: _itemsSectionBody(selected),
+    );
+    final deliveryStep = PageSection(
+      step: 3,
+      complete: dlv != null,
+      icon: Icons.local_shipping_rounded,
+      accent: AppColors.primary,
+      label: 'ການຮັບສິນຄ້າ',
+      child: _deliveryPickerRow(),
+    );
+    final settingsStep = PageSection(
+      step: 4,
+      complete: hasExtra || hasNote,
+      icon: Icons.local_offer_rounded,
+      accent: AppColors.primary,
+      label: 'ສ່ວນຫຼຸດ ແລະ ໝາຍເຫດ',
+      child: _compactSettingsRow(),
+    );
+    final summaryStep = PageSection(
+      step: 5,
+      complete: ready,
+      icon: Icons.receipt_long_rounded,
+      accent: AppColors.primary,
+      label: 'ສະຫຼຸບ',
+      child: _summarySection(),
+    );
+
+    // On a phone the five steps are one column, which is the whole screen.
+    // On an 11" tablet in landscape that column leaves two thirds of the
+    // glass empty and pushes the total below the fold, so the sale splits
+    // the way the web POS does: what you are building on the left, what it
+    // costs and how it ships on the right, both visible at once.
+    if (!isTablet(context)) {
+      return ListView(
+        key: const PageStorageKey('create-order-entry'),
+        padding: const EdgeInsets.fromLTRB(kSpace4, kSpace4, kSpace4, kSpace5),
+        children: [
+          customerStep,
+          const SizedBox(height: kSpace4),
+          itemsStep,
+          const SizedBox(height: kSpace4),
+          deliveryStep,
+          const SizedBox(height: kSpace4),
+          settingsStep,
+          const SizedBox(height: kSpace4),
+          summaryStep,
+        ],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        PageSection(
-          step: 1,
-          complete: c != null,
-          icon: Icons.person_rounded,
-          accent: AppColors.primary,
-          label: 'ລູກຄ້າ',
-          child: _customerStepBody(),
+        Expanded(
+          child: ListView(
+            key: const PageStorageKey('create-order-entry-left'),
+            padding: const EdgeInsets.fromLTRB(
+              kSpace4,
+              kSpace4,
+              kSpace3,
+              kSpace5,
+            ),
+            children: [
+              customerStep,
+              const SizedBox(height: kSpace4),
+              itemsStep,
+            ],
+          ),
         ),
-        const SizedBox(height: kSpace4),
-        PageSection(
-          step: 2,
-          complete: selected.isNotEmpty,
-          icon: Icons.shopping_cart_rounded,
-          accent: AppColors.primary,
-          label: 'ສິນຄ້າ',
-          trailing: selected.isEmpty ? null : '${selected.length} ລາຍການ',
-          child: _itemsSectionBody(selected),
-        ),
-        const SizedBox(height: kSpace4),
-        PageSection(
-          step: 3,
-          complete: dlv != null,
-          icon: Icons.local_shipping_rounded,
-          accent: AppColors.primary,
-          label: 'ການຮັບສິນຄ້າ',
-          child: _deliveryPickerRow(),
-        ),
-        const SizedBox(height: kSpace4),
-        PageSection(
-          step: 4,
-          complete: hasExtra || hasNote,
-          icon: Icons.local_offer_rounded,
-          accent: AppColors.primary,
-          label: 'ສ່ວນຫຼຸດ ແລະ ໝາຍເຫດ',
-          child: _compactSettingsRow(),
-        ),
-        const SizedBox(height: kSpace4),
-        PageSection(
-          step: 5,
-          complete: ready,
-          icon: Icons.receipt_long_rounded,
-          accent: AppColors.primary,
-          label: 'ສະຫຼຸບ',
-          child: _summarySection(),
+        Container(width: 1, color: AppColors.border),
+        SizedBox(
+          width: 400,
+          child: ListView(
+            key: const PageStorageKey('create-order-entry-right'),
+            padding: const EdgeInsets.fromLTRB(
+              kSpace3,
+              kSpace4,
+              kSpace4,
+              kSpace5,
+            ),
+            children: [
+              summaryStep,
+              const SizedBox(height: kSpace4),
+              deliveryStep,
+              const SizedBox(height: kSpace4),
+              settingsStep,
+            ],
+          ),
         ),
       ],
     );
