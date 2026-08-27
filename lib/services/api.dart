@@ -732,12 +732,14 @@ class ApiClient {
     required String warehouse,
     String q = '',
     int limit = 60,
+    int offset = 0,
   }) async {
     final res = await _get(
       _uri('/api/products', {
         'warehouses': warehouse,
         'q': q.trim(),
         'limit': '$limit',
+        'offset': '$offset',
       }),
       headers: _headers(),
     );

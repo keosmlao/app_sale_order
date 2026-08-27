@@ -97,6 +97,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   // promotion matching, and set lookups.
   List<InventoryItem> _catalog = const [];
   bool _catalogBusy = true;
+  // Paging state for the grid. The storefront stocks ~700 items and a page
+  // is 60, so browsing past the first screen has to ask for more.
+  bool _catalogLoadingMore = false;
+  bool _catalogExhausted = false;
   Timer? _catalogDebounce;
   int _catalogSeq = 0;
 
@@ -2276,7 +2280,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     return _paneHeader(
       icon: Icons.inventory_2_rounded,
       label: 'ສິນຄ້າ',
-      trailing: _catalogBusy ? '…' : '${_catalog.length} ລາຍການ',
+      // "+" while there are more pages to come: 60 of 700 reads as the
+      // whole shop otherwise.
+      trailing: _catalogBusy
+          ? '…'
+          : '${_catalog.length}${_catalogExhausted ? '' : '+'} ລາຍການ',
       action: _buildPromoAppBarButton(compact: true),
     );
   }
@@ -3143,7 +3151,12 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   Future<void> _fetchCatalog(String q) async {
     final seq = ++_catalogSeq;
-    if (mounted) setState(() => _catalogBusy = true);
+    if (mounted) {
+      setState(() {
+        _catalogBusy = true;
+        _catalogExhausted = false;
+      });
+    }
     try {
       final rows = await AppScope.of(
         context,
@@ -3152,6 +3165,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       setState(() {
         _catalog = rows;
         _catalogBusy = false;
+        _catalogExhausted = rows.isEmpty;
       });
     } catch (e) {
       debugPrint('[POS] catalogue load failed: $e');
@@ -3159,7 +3173,44 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       setState(() {
         _catalog = const [];
         _catalogBusy = false;
+        _catalogExhausted = true;
       });
+    }
+  }
+
+  // Next page, appended. Stops on an EMPTY page rather than a short one:
+  // the server drops air units without a set composition after its own
+  // LIMIT, so a full page of rows can arrive as fewer, and a short page is
+  // not the end of the list.
+  Future<void> _loadMoreCatalog() async {
+    if (_catalogBusy || _catalogLoadingMore || _catalogExhausted) return;
+    final seq = _catalogSeq;
+    setState(() => _catalogLoadingMore = true);
+    try {
+      final rows = await AppScope.of(context).api.fetchPosCatalog(
+        warehouse: kStorefrontWarehouse,
+        q: _query.trim(),
+        offset: _catalog.length,
+      );
+      if (!mounted || seq != _catalogSeq) return;
+      setState(() {
+        if (rows.isEmpty) {
+          _catalogExhausted = true;
+        } else {
+          // A concurrent stock change can shift the window under us, so
+          // guard against the same item arriving twice.
+          final seen = _catalog.map((p) => p.code).toSet();
+          _catalog = [
+            ..._catalog,
+            ...rows.where((p) => !seen.contains(p.code)),
+          ];
+        }
+        _catalogLoadingMore = false;
+      });
+    } catch (e) {
+      debugPrint('[POS] catalogue page failed: $e');
+      if (!mounted || seq != _catalogSeq) return;
+      setState(() => _catalogLoadingMore = false);
     }
   }
 
@@ -3192,30 +3243,46 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       onRefresh: () => _fetchCatalog(_query.trim()),
       child: LayoutBuilder(
         builder: (context, box) {
-          // Three across on a tablet. Four fitted, but only by squeezing
-          // each tile until the product name truncated after two words —
-          // "ຕູ້ເຢັນ HISE…" tells the counter nothing, and the price had
-          // to be cut short too. Three leaves room to read the row.
           final columns = isTablet(context)
               ? 4
               : (box.maxWidth / 164).floor().clamp(2, 4);
-          return GridView.builder(
-            padding: const EdgeInsets.fromLTRB(
-              kSpace3,
-              kSpace3,
-              kSpace3,
-              kSpace5,
+          return NotificationListener<ScrollNotification>(
+            // Fetch the next page a screen before the end, so the grid
+            // keeps scrolling rather than stopping at a spinner.
+            onNotification: (n) {
+              if (n.metrics.axis != Axis.vertical) return false;
+              final remaining = n.metrics.maxScrollExtent - n.metrics.pixels;
+              if (remaining < 600) unawaited(_loadMoreCatalog());
+              return false;
+            },
+            child: GridView.builder(
+              padding: const EdgeInsets.fromLTRB(
+                kSpace3,
+                kSpace3,
+                kSpace3,
+                kSpace5,
+              ),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                // Taller than the text-only tile was: the photo is the top
+                // half of the card now.
+                mainAxisExtent: isTablet(context) ? 236 : 200,
+              ),
+              // One extra cell at the end while a page is in flight, so the
+              // grid says it is still coming instead of looking finished.
+              itemCount: filtered.length + (_catalogLoadingMore ? columns : 0),
+              itemBuilder: (_, i) => i < filtered.length
+                  ? _catalogCard(filtered[i])
+                  : const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
             ),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              // Taller than the text-only tile was: the photo is the top
-              // half of the card now.
-              mainAxisExtent: isTablet(context) ? 236 : 200,
-            ),
-            itemCount: filtered.length,
-            itemBuilder: (_, i) => _catalogCard(filtered[i]),
           );
         },
       ),
