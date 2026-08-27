@@ -1379,7 +1379,15 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         .where((o) => o.warehouse.code != current && o.stock.floor() >= 1)
         .toList();
     if (elsewhere.isEmpty) return false;
-    elsewhere.sort((a, b) => b.stock.compareTo(a.stock));
+    // Warehouses that can cover the whole quantity lead the list — they
+    // are the ones that answer the question — and the rest follow by how
+    // much they hold.
+    elsewhere.sort((a, b) {
+      final aCovers = a.stock.floor() >= wanted;
+      final bCovers = b.stock.floor() >= wanted;
+      if (aCovers != bCovers) return aCovers ? -1 : 1;
+      return b.stock.compareTo(a.stock);
+    });
 
     final picked = await showModalBottomSheet<_WarehouseStockOption>(
       context: context,
@@ -1393,7 +1401,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         item: item,
         options: elsewhere,
         fmt: _fmt,
-        headline: 'ສາງນີ້ມີ $here — ຕ້ອງການ $wanted, ເລືອກສາງອື່ນ',
+        wanted: wanted,
+        headline: 'ສາງນີ້ມີ $here — ຕ້ອງການ $wanted, ປ່ຽນສາງ',
       ),
     );
     if (picked == null || !mounted) return false;
@@ -6463,14 +6472,19 @@ class _WarehouseStockPickerSheet extends StatelessWidget {
     required this.options,
     required this.fmt,
     this.headline,
+    this.wanted,
   });
 
   final InventoryItem item;
   final List<_WarehouseStockOption> options;
   final NumberFormat fmt;
   // Set when the sheet is asking a question rather than taking the first
-  // pick — "this warehouse has 2, take 5 from another?".
+  // pick — "this warehouse has 2, choose another".
   final String? headline;
+  // The quantity being asked for, when there is one. Options that can
+  // cover it are marked; the rest say what they actually hold, so a
+  // warehouse that solves the problem is not read as one that does not.
+  final int? wanted;
 
   @override
   Widget build(BuildContext context) {
@@ -6535,6 +6549,7 @@ class _WarehouseStockPickerSheet extends StatelessWidget {
                   final stockText = opt.stock == opt.stock.toInt()
                       ? fmt.format(opt.stock.toInt())
                       : opt.stock.toStringAsFixed(2);
+                  final covers = wanted != null && opt.stock.floor() >= wanted!;
                   return Material(
                     color: AppColors.cardBg,
                     borderRadius: BorderRadius.circular(kRadiusMd),
@@ -6547,7 +6562,12 @@ class _WarehouseStockPickerSheet extends StatelessWidget {
                           vertical: 14,
                         ),
                         decoration: BoxDecoration(
-                          border: Border.all(color: AppColors.border),
+                          border: Border.all(
+                            color: covers
+                                ? AppColors.success
+                                : AppColors.border,
+                            width: covers ? 1.5 : 1,
+                          ),
                           borderRadius: BorderRadius.circular(kRadiusMd),
                         ),
                         child: Row(
@@ -6557,12 +6577,20 @@ class _WarehouseStockPickerSheet extends StatelessWidget {
                               height: 40,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
-                                color: AppColors.gold.withValues(alpha: 0.12),
+                                color:
+                                    (covers
+                                            ? AppColors.success
+                                            : AppColors.gold)
+                                        .withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(kRadiusSm),
                               ),
                               child: Icon(
-                                Icons.warehouse_outlined,
-                                color: AppColors.gold,
+                                covers
+                                    ? Icons.check_circle_outline_rounded
+                                    : Icons.warehouse_outlined,
+                                color: covers
+                                    ? AppColors.success
+                                    : AppColors.gold,
                                 size: 20,
                               ),
                             ),
@@ -6636,13 +6664,19 @@ class _WarehouseStockPickerSheet extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  opt.stock <= 0 ? 'Backorder' : 'ໃນສາງ',
+                                  covers
+                                      ? 'ພຽງພໍ'
+                                      : opt.stock <= 0
+                                      ? 'Backorder'
+                                      : 'ໃນສາງ',
                                   style: TextStyle(
-                                    color: opt.stock <= 0
+                                    color: covers
+                                        ? AppColors.success
+                                        : opt.stock <= 0
                                         ? AppColors.warning
                                         : AppColors.textMuted,
                                     fontSize: 10,
-                                    fontWeight: FontWeight.w700,
+                                    fontWeight: FontWeight.w800,
                                   ),
                                 ),
                               ],
