@@ -549,6 +549,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   Future<void> _openPromotionList() async {
     final picked = await showModalBottomSheet<Promotion>(
       context: context,
+      constraints: _sheetConstraints(context),
       isScrollControlled: true,
       backgroundColor: AppColors.bg,
       shape: const RoundedRectangleBorder(
@@ -623,6 +624,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         : null;
     final picked = await showModalBottomSheet<String>(
       context: context,
+      constraints: _sheetConstraints(context),
       backgroundColor: AppColors.cardBg,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(kRadiusXl)),
@@ -1350,6 +1352,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
     final picked = await showModalBottomSheet<SerialUnit>(
       context: context,
+      constraints: _sheetConstraints(context),
       isScrollControlled: true,
       backgroundColor: AppColors.cardBg,
       shape: const RoundedRectangleBorder(
@@ -1542,6 +1545,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
     final picked = await showModalBottomSheet<_WarehouseStockOption>(
       context: context,
+      constraints: _sheetConstraints(context),
       isScrollControlled: true,
       backgroundColor: AppColors.cardBg,
       shape: const RoundedRectangleBorder(
@@ -1675,6 +1679,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     final canCreate = me?.canCreateCustomers ?? false;
     final picked = await showModalBottomSheet<Customer>(
       context: context,
+      constraints: _sheetConstraints(context),
       isScrollControlled: true,
       backgroundColor: AppColors.bg,
       shape: const RoundedRectangleBorder(
@@ -1757,6 +1762,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     }
     final picked = await showModalBottomSheet<TransportType>(
       context: context,
+      constraints: _sheetConstraints(context),
       isScrollControlled: true,
       backgroundColor: AppColors.bg,
       shape: const RoundedRectangleBorder(
@@ -1776,6 +1782,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     final current = _salespersonByItemCode[item.code] ?? _selectedSalesperson;
     final picked = await showModalBottomSheet<Employee>(
       context: context,
+      constraints: _sheetConstraints(context),
       isScrollControlled: true,
       backgroundColor: AppColors.bg,
       shape: const RoundedRectangleBorder(
@@ -2457,6 +2464,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     // member discount and stock all depend on the customer, so adding items
     // before that is blocked. Empty + no customer shows a nudge instead.
     final hasCustomer = _selectedCustomer != null;
+    // On a tablet the catalogue is already on screen beside the cart.
+    final onTablet = isTablet(context);
     if (selected.isEmpty) {
       return Column(
         children: [
@@ -2483,15 +2492,17 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 const SizedBox(height: 4),
                 Text(
                   hasCustomer
-                      ? 'ກົດເພີ່ມສິນຄ້າ ຫຼື ສະແກນ barcode'
-                      : 'ປຸ່ມເພີ່ມສິນຄ້າຈະປະກົດເມື່ອເລືອກລູກຄ້າແລ້ວ',
+                      ? (onTablet
+                            ? 'ກົດສິນຄ້າທາງຊ້າຍ ຫຼື ສະແກນ barcode'
+                            : 'ກົດເພີ່ມສິນຄ້າ ຫຼື ສະແກນ barcode')
+                      : 'ເລືອກລູກຄ້າກ່ອນ ຈຶ່ງເພີ່ມສິນຄ້າໄດ້',
                   style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                   textAlign: TextAlign.center,
                 ),
               ],
             ),
           ),
-          if (hasCustomer) _addProductRow(),
+          if (hasCustomer && !onTablet) _addProductRow(),
         ],
       );
     }
@@ -2500,16 +2511,22 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         ..._buildCartLines(selected, () {
           if (mounted) setState(() {});
         }),
-        const SizedBox(height: 10),
-        Divider(height: 1, color: AppColors.divider),
-        const SizedBox(height: 10),
-        _addProductRow(),
+        if (!onTablet) ...[
+          const SizedBox(height: 10),
+          Divider(height: 1, color: AppColors.divider),
+          const SizedBox(height: 10),
+          _addProductRow(),
+        ],
       ],
     );
   }
 
-  // Primary CTA + scan button — used both inside the empty state and
-  // beneath the cart list so the user can always add more items.
+  // Primary CTA + scan button. The phone has no catalogue on screen, so
+  // this is how items get added there — it opens the picker sheet.
+  //
+  // A tablet does have the catalogue, right beside the cart, with its own
+  // search and scan button. A second "add product" that opens a sheet over
+  // the top of it is a longer way round to the same list.
   Widget _addProductRow() {
     final hasCustomer = _selectedCustomer != null;
     return Row(
@@ -2878,6 +2895,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     }
     await showModalBottomSheet<void>(
       context: context,
+      constraints: _sheetConstraints(context),
       isScrollControlled: true,
       backgroundColor: AppColors.bg,
       shape: const RoundedRectangleBorder(
@@ -3043,6 +3061,15 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     }
   }
 
+  // A modal sheet spanning an 11" tablet puts its content miles from the
+  // hand holding the device, and a two-line warehouse name ends up adrift
+  // in white space. Cap it and let the sheet centre itself; on a phone it
+  // stays full width, which is already the right answer there.
+  BoxConstraints? _sheetConstraints(BuildContext context) {
+    if (!isTablet(context)) return null;
+    return const BoxConstraints(maxWidth: 560);
+  }
+
   Widget _catalogGrid() {
     final filtered = _catalog;
     if (_catalogBusy && filtered.isEmpty) {
@@ -3063,12 +3090,12 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       onRefresh: () => _fetchCatalog(_query.trim()),
       child: LayoutBuilder(
         builder: (context, box) {
-          // Four across, pinned, exactly as the web pins it once the sale
-          // collapsed into one rail and the catalogue took the freed width.
-          // Below tablet width the tiles size themselves off a 152px
-          // minimum, the grid's auto-fill default there.
+          // Three across on a tablet. Four fitted, but only by squeezing
+          // each tile until the product name truncated after two words —
+          // "ຕູ້ເຢັນ HISE…" tells the counter nothing, and the price had
+          // to be cut short too. Three leaves room to read the row.
           final columns = isTablet(context)
-              ? 4
+              ? 3
               : (box.maxWidth / 164).floor().clamp(2, 4);
           return GridView.builder(
             padding: const EdgeInsets.fromLTRB(
