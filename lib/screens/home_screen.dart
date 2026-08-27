@@ -4,6 +4,7 @@ import '../services/presence.dart';
 import 'inventory_screen.dart';
 import 'manager_screens.dart';
 import 'my_dashboard_screen.dart';
+import 'create_order_screen.dart';
 import 'orders_screen.dart';
 import 'profile_screen.dart';
 
@@ -21,28 +22,50 @@ class _NavTab {
     required this.icon,
     required this.activeIcon,
     required this.page,
+    this.ownHeader = false,
   });
   final String title;
   final String label;
   final IconData icon;
   final IconData activeIcon;
   final Widget page;
+  // The page draws its own header, so the shell must not add one on top.
+  // Declared per tab rather than inferred from the index — the two tab
+  // lists no longer share an order, and index arithmetic silently put a
+  // second app bar on whichever screen shifted.
+  final bool ownHeader;
 }
 
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
 
-  // Sell, stock, promotions — the three things a counter tablet does.
+  // Sell, sold, stock, promotions.
+  //
+  // ຂາຍ is the POS itself, not a list of what has already been sold. That
+  // is what the web does — a salesperson lands on /orders/new, with the
+  // catalogue in front of them — and it is what a counter tablet is for.
+  // The orders list is still one tap away under ໃບສັ່ງຂາຍ, the same split
+  // the web sidebar makes.
   static const _tabletTabs = <_NavTab>[
     _NavTab(
-      title: 'Sale Order',
+      title: 'ຂາຍໜ້າຮ້ານ',
+      ownHeader: true,
       label: 'ຂາຍ',
+      icon: Icons.point_of_sale_outlined,
+      activeIcon: Icons.point_of_sale_rounded,
+      page: CreateOrderScreen(embedded: true),
+    ),
+    _NavTab(
+      title: 'Sale Order',
+      ownHeader: true,
+      label: 'ໃບສັ່ງຂາຍ',
       icon: Icons.receipt_long_outlined,
       activeIcon: Icons.receipt_long_rounded,
       page: OrdersScreen(),
     ),
     _NavTab(
       title: 'ສິນຄ້າຄົງເຫຼືອ',
+      ownHeader: true,
       label: 'ສິນຄ້າ',
       icon: Icons.inventory_2_outlined,
       activeIcon: Icons.inventory_2_rounded,
@@ -60,6 +83,7 @@ class _HomeScreenState extends State<HomeScreen> {
   static const _tabs = <_NavTab>[
     _NavTab(
       title: 'ໜ້າຫຼັກ',
+      ownHeader: true,
       label: 'ໜ້າຫຼັກ',
       icon: Icons.home_outlined,
       activeIcon: Icons.home_rounded,
@@ -67,6 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
     _NavTab(
       title: 'Sale Order',
+      ownHeader: true,
       label: 'ຂາຍ',
       icon: Icons.receipt_long_outlined,
       activeIcon: Icons.receipt_long_rounded,
@@ -74,6 +99,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
     _NavTab(
       title: 'ສິນຄ້າຄົງເຫຼືອ',
+      ownHeader: true,
       label: 'ສິນຄ້າ',
       icon: Icons.inventory_2_outlined,
       activeIcon: Icons.inventory_2_rounded,
@@ -93,14 +119,19 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     // Report the landing tab so the monitor shows where the user starts.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      PresenceService.instance.setScreen(_tabs[_index].title);
+      final tabs = isTablet(context) ? _tabletTabs : _tabs;
+      PresenceService.instance.setScreen(tabs[_index].title);
     });
   }
 
   void _onTab(int i) {
     setState(() => _index = i);
     // Switching tabs is activity — surface the new screen on the monitor.
-    PresenceService.instance.setScreen(_tabs[i].title);
+    // Read from the list actually in use: the tablet's is a different set
+    // in a different order, and indexing the phone's would either mislabel
+    // the screen or run off the end of it.
+    final tabs = isTablet(context) ? _tabletTabs : _tabs;
+    PresenceService.instance.setScreen(tabs[i].title);
   }
 
   PreferredSizeWidget _appBar(String title) {
@@ -116,9 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // way to end up on the wrong screen mid-sale.
     final tabs = useRail ? _tabletTabs : _tabs;
     final safeIndex = _index >= tabs.length ? 0 : _index;
-    // Tabs 0 (dashboard), 1 (orders) and 2 (inventory) render their own custom
-    // headers inline, so only the profile tab keeps the shared app bar.
-    final showAppBar = safeIndex != 0 && safeIndex != 1 && safeIndex != 2;
+    final showAppBar = !tabs[safeIndex].ownHeader;
 
     final stack = IndexedStack(
       index: safeIndex,

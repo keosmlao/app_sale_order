@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'app_scope.dart';
 import 'app_theme.dart';
@@ -63,6 +65,10 @@ class _OdgSaleAppState extends State<OdgSaleApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       PresenceService.instance.report(force: true);
+      // A shop tablet is put down, not shut down. Resume is the moment it
+      // is most likely to have missed a release, and the safest one to
+      // interrupt: nobody is mid-keystroke.
+      unawaited(AppUpdateService.instance.check(_api.baseUrl));
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       PresenceService.instance.reportOffline();
@@ -93,7 +99,24 @@ class _OdgSaleAppState extends State<OdgSaleApp> with WidgetsBindingObserver {
               return AmbientGradientBackground(
                 child: MediaQuery(
                   data: media.copyWith(textScaler: TextScaler.linear(0.94)),
-                  child: child ?? const SizedBox.shrink(),
+                  // The update gate sits above every route rather than
+                  // inside the boot screen. A build below the server's
+                  // floor cannot be trusted against it, so it goes no
+                  // further — signed in or not, and whatever screen it
+                  // happened to be on when the answer arrived.
+                  child: ValueListenableBuilder<AppRelease?>(
+                    valueListenable: AppUpdateService.instance.required,
+                    builder: (context, release, inner) {
+                      if (release != null) {
+                        return ForcedUpdateScreen(
+                          release: release,
+                          baseUrl: _api.baseUrl,
+                        );
+                      }
+                      return inner ?? const SizedBox.shrink();
+                    },
+                    child: child ?? const SizedBox.shrink(),
+                  ),
                 ),
               );
             },
@@ -126,14 +149,11 @@ class _BootstrapState extends State<_Bootstrap> {
   // fails the boot.
   Future<_Boot> _boot() async {
     final scope = AppScope.of(context);
-    final results = await Future.wait([
-      scope.auth.tryRestore(),
-      AppUpdateService.instance.mandatoryUpdate(scope.api.baseUrl),
-    ]);
-    return _Boot(
-      signedIn: results[0] == true,
-      update: results[1] is AppRelease ? results[1] as AppRelease : null,
-    );
+    // Kicked off, not awaited: the update gate above the navigator shows
+    // the screen when the answer lands, so restoring the session does not
+    // wait on a network call that may time out.
+    unawaited(AppUpdateService.instance.check(scope.api.baseUrl));
+    return _Boot(signedIn: await scope.auth.tryRestore());
   }
 
   @override
@@ -147,15 +167,6 @@ class _BootstrapState extends State<_Bootstrap> {
           );
         }
         final boot = snap.data;
-        // A build below the server's floor cannot be trusted against it, so
-        // it goes no further — signed in or not.
-        final update = boot?.update;
-        if (update != null) {
-          return ForcedUpdateScreen(
-            release: update,
-            baseUrl: AppScope.of(context).api.baseUrl,
-          );
-        }
         return boot?.signedIn == true ? const HomeScreen() : const LoginScreen();
       },
     );
@@ -163,7 +174,6 @@ class _BootstrapState extends State<_Bootstrap> {
 }
 
 class _Boot {
-  const _Boot({required this.signedIn, required this.update});
+  const _Boot({required this.signedIn});
   final bool signedIn;
-  final AppRelease? update;
 }

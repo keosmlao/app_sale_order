@@ -12,7 +12,13 @@ import 'barcode_scanner_screen.dart';
 import '../components/ui_components.dart';
 
 class CreateOrderScreen extends StatefulWidget {
-  const CreateOrderScreen({super.key, this.editOrder});
+  const CreateOrderScreen({super.key, this.editOrder, this.embedded = false});
+
+  // True when the screen IS the sales tab rather than a route pushed over
+  // one. The web POS is where a salesperson lands, so on a counter tablet
+  // this is the home screen — which means there is nothing to close back
+  // to, and finishing a bill starts the next one instead of popping.
+  final bool embedded;
 
   // When set, the screen opens in "edit" mode — customer + items are
   // pre-filled from the existing order. On successful submit the new bill
@@ -1909,7 +1915,13 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       HapticFeedback.mediumImpact();
       await _showResultDialog(success: true);
       if (!mounted) return;
-      Navigator.of(context).pop(true);
+      if (widget.embedded) {
+        // The counter's next customer is already waiting. Clear down to an
+        // empty bill rather than closing a screen that has nothing behind it.
+        _resetForNextSale();
+      } else {
+        Navigator.of(context).pop(true);
+      }
     } catch (e) {
       if (!mounted) return;
       HapticFeedback.heavyImpact();
@@ -1960,19 +1972,22 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         backgroundColor: AppColors.primary,
         elevation: 0,
         scrolledUnderElevation: 0,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: kSpace2),
-          child: IconButton(
-            tooltip: 'ປິດ',
-            onPressed: () => Navigator.of(context).maybePop(),
-            icon: const Icon(
-              Icons.close_rounded,
-              size: 22,
-              color: Colors.white,
-            ),
-          ),
-        ),
-        leadingWidth: 56,
+        automaticallyImplyLeading: false,
+        leading: widget.embedded
+            ? null
+            : Padding(
+                padding: const EdgeInsets.only(left: kSpace2),
+                child: IconButton(
+                  tooltip: 'ປິດ',
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    size: 22,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+        leadingWidth: widget.embedded ? 0 : 56,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -2088,19 +2103,63 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       );
     }
 
-    // Three columns, the shape the web POS uses above 1180px: what you are
-    // picking from, what is on the bill, and what it costs. Each scrolls on
-    // its own, so adding the tenth item never pushes the total out of view.
+    // Catalogue on the left, the sale on the right — the web POS's shape.
     //
-    // The numbered 1-2-3 wizard is deliberately dropped here, exactly as the
-    // web drops it at this width. Its job is to tell the cashier what step
-    // is next on a screen that can only show one step at a time; when all
-    // three are on the glass at once it is just chrome eating the height.
+    // The web splits the sale into its own two columns (cart, then bill)
+    // only at 1180px and up; below that both live in one rail. Same rule
+    // here, off the same number, so the tablet and the browser on that
+    // tablet do not disagree about where the total is.
+    //
+    // The numbered 1-2-3 wizard is dropped at these widths, exactly as the
+    // web drops it. It exists to say what step is next on a screen that can
+    // show one step at a time; with everything on the glass at once it is
+    // chrome eating the height.
+    final wide = MediaQuery.of(context).size.width >= 1180;
+
+    final billBlocks = <Widget>[
+      _railBlock('ລູກຄ້າ', _customerStepBody()),
+      const SizedBox(height: kSpace3),
+      _railBlock('ການຮັບສິນຄ້າ', _deliveryPickerRow()),
+      const SizedBox(height: kSpace3),
+      _railBlock('ສ່ວນຫຼຸດ ແລະ ໝາຍເຫດ', _compactSettingsRow()),
+      const SizedBox(height: kSpace3),
+      _railBlock('ສະຫຼຸບ', _summarySection()),
+    ];
+
+    Widget pane({
+      required IconData icon,
+      required String label,
+      String? trailing,
+      required String storageKey,
+      required List<Widget> children,
+    }) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _paneHeader(icon: icon, label: label, trailing: trailing),
+          Expanded(
+            child: ListView(
+              key: PageStorageKey(storageKey),
+              padding: const EdgeInsets.fromLTRB(
+                kSpace3,
+                kSpace3,
+                kSpace3,
+                kSpace5,
+              ),
+              children: children,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final divider = Container(width: 1, color: AppColors.border);
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          flex: 5,
+          flex: wide ? 5 : 6,
           child: Column(
             children: [
               _buildSearchRow(refresh: () => setState(() {})),
@@ -2108,66 +2167,44 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             ],
           ),
         ),
-        Container(width: 1, color: AppColors.border),
-        Expanded(
-          flex: 5,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _paneHeader(
-                icon: Icons.shopping_cart_rounded,
-                label: 'ກະຕ່າ',
-                trailing: selected.isEmpty ? null : '${selected.length} ລາຍການ',
-              ),
-              Expanded(
-                child: ListView(
-                  key: const PageStorageKey('create-order-cart'),
-                  padding: const EdgeInsets.fromLTRB(
-                    kSpace3,
-                    kSpace3,
-                    kSpace3,
-                    kSpace5,
-                  ),
-                  children: [_itemsSectionBody(selected)],
-                ),
-              ),
-            ],
+        divider,
+        if (wide) ...[
+          Expanded(
+            flex: 5,
+            child: pane(
+              icon: Icons.shopping_cart_rounded,
+              label: 'ກະຕ່າ',
+              trailing: selected.isEmpty ? null : '${selected.length} ລາຍການ',
+              storageKey: 'create-order-cart',
+              children: [_itemsSectionBody(selected)],
+            ),
           ),
-        ),
-        Container(width: 1, color: AppColors.border),
-        SizedBox(
-          width: 340,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _paneHeader(
-                icon: Icons.receipt_long_rounded,
-                label: 'ບິນ',
-                trailing: ready ? 'ພ້ອມ' : null,
-              ),
-              Expanded(
-                child: ListView(
-                  key: const PageStorageKey('create-order-checkout'),
-                  padding: const EdgeInsets.fromLTRB(
-                    kSpace3,
-                    kSpace3,
-                    kSpace3,
-                    kSpace5,
-                  ),
-                  children: [
-                    _railBlock('ລູກຄ້າ', _customerStepBody()),
-                    const SizedBox(height: kSpace3),
-                    _railBlock('ການຮັບສິນຄ້າ', _deliveryPickerRow()),
-                    const SizedBox(height: kSpace3),
-                    _railBlock('ສ່ວນຫຼຸດ ແລະ ໝາຍເຫດ', _compactSettingsRow()),
-                    const SizedBox(height: kSpace3),
-                    _railBlock('ສະຫຼຸບ', _summarySection()),
-                  ],
-                ),
-              ),
-            ],
+          divider,
+          SizedBox(
+            width: 340,
+            child: pane(
+              icon: Icons.receipt_long_rounded,
+              label: 'ບິນ',
+              trailing: ready ? 'ພ້ອມ' : null,
+              storageKey: 'create-order-checkout',
+              children: billBlocks,
+            ),
           ),
-        ),
+        ] else
+          Expanded(
+            flex: 5,
+            child: pane(
+              icon: Icons.receipt_long_rounded,
+              label: 'ຂາຍ',
+              trailing: selected.isEmpty ? null : '${selected.length} ລາຍການ',
+              storageKey: 'create-order-sale',
+              children: [
+                _itemsSectionBody(selected),
+                const SizedBox(height: kSpace3),
+                ...billBlocks,
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -3164,6 +3201,35 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         ),
       ),
     );
+  }
+
+  // Empty the bill and start again, keeping what the counter would keep:
+  // the catalogue it has already loaded, the warehouse list, the delivery
+  // options, and the salesperson. Only the sale itself is cleared.
+  void _resetForNextSale() {
+    setState(() {
+      _qtyByCode.clear();
+      _warehouseByItemCode.clear();
+      _locationByItemCode.clear();
+      _approvedPriceByCode.clear();
+      _salespersonByItemCode.clear();
+      _bonusOfByCode.clear();
+      _promoChoiceByCode.clear();
+      _buildableSetsByCode.clear();
+      _setDetailsByCode.clear();
+      _serialByItemCode.clear();
+      _selectedCustomer = null;
+      _note = '';
+      _extraDiscount = 0;
+      _promoDiscountByCode = const {};
+      _promoLabelByCode = const {};
+      _customerDiscountByCode = const {};
+      _awardsPointsByCode = const {};
+      _totalPromoDiscount = 0;
+      _query = '';
+      _searchCtl.clear();
+    });
+    _reloadCatalog();
   }
 
   // Same sequence the picker sheet uses: settle any promo choice first, then

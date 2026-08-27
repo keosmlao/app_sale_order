@@ -48,31 +48,47 @@ class AppRelease {
 /// Tablets on the shop floor are updated by someone walking over with the
 /// download page open, so a build can sit there for months. When the server
 /// raises `minBuildNumber` the app has to say so itself — nothing else will.
+///
+/// [required] is the answer, and the app root watches it: the moment it
+/// holds a release, the update screen covers whatever is on screen. That
+/// matters because a shop tablet is rarely restarted — checking once at
+/// launch means a device that has been awake since Monday never hears about
+/// a release published on Tuesday.
 class AppUpdateService {
   AppUpdateService._();
   static final instance = AppUpdateService._();
 
-  bool _checked = false;
+  /// Non-null when the running build is below the server's floor.
+  final ValueNotifier<AppRelease?> required = ValueNotifier<AppRelease?>(null);
 
-  /// Returns the release when the running build is below the floor, else
-  /// null. Never throws: a device that cannot reach the server is not
-  /// blocked from selling, since the check is a courtesy, not a licence.
-  Future<AppRelease?> mandatoryUpdate(String baseUrl) async {
-    if (_checked) return null;
-    _checked = true;
+  bool _inFlight = false;
+
+  /// Ask the server what build it expects and publish the answer.
+  ///
+  /// Never throws, and never clears a requirement it has already found: a
+  /// device that has been told it is too old stays told, even if the next
+  /// check cannot reach the server. Failures are not remembered either —
+  /// the earlier version latched on the first attempt, so one bad moment of
+  /// wifi disabled the check for the rest of the process.
+  Future<void> check(String baseUrl) async {
+    if (_inFlight || required.value != null) return;
+    if (baseUrl.trim().isEmpty) return;
+    _inFlight = true;
     try {
       final info = await PackageInfo.fromPlatform();
       final current = int.tryParse(info.buildNumber) ?? 0;
       final res = await http
           .get(Uri.parse('$baseUrl/api/app-version'))
           .timeout(const Duration(seconds: 6));
-      if (res.statusCode != 200) return null;
-      final release = AppRelease.tryParse(
-        jsonDecode(res.body) as Object?,
+      if (res.statusCode != 200) return;
+      final release = AppRelease.tryParse(jsonDecode(res.body) as Object?);
+      if (release == null) return;
+      debugPrint(
+        '[Update] installed=$current floor=${release.minBuildNumber} '
+        'published=${release.version}+${release.buildNumber}',
       );
-      if (release == null) return null;
-      if (current >= release.minBuildNumber) return null;
-      return AppRelease(
+      if (current >= release.minBuildNumber) return;
+      required.value = AppRelease(
         version: release.version,
         buildNumber: release.buildNumber,
         minBuildNumber: release.minBuildNumber,
@@ -80,8 +96,10 @@ class AppUpdateService {
         notes: release.notes,
         installedVersion: '${info.version}+${info.buildNumber}',
       );
-    } catch (_) {
-      return null;
+    } catch (e) {
+      debugPrint('[Update] check failed: $e');
+    } finally {
+      _inFlight = false;
     }
   }
 }
