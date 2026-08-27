@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../app_theme.dart';
 import '../services/presence.dart';
 import 'inventory_screen.dart';
-import 'manager_screens.dart';
 import 'my_dashboard_screen.dart';
 import 'pos_web_screen.dart';
 import 'orders_screen.dart';
@@ -41,11 +40,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Sell, sold, stock, promotions.
   //
-  // ຂາຍ is the POS itself, not a list of what has already been sold. That
-  // is what the web does — a salesperson lands on /orders/new, with the
-  // catalogue in front of them — and it is what a counter tablet is for.
-  // The orders list is still one tap away under ໃບສັ່ງຂາຍ, the same split
-  // the web sidebar makes.
+  // Two things, because a counter tablet does two things: sell, and check
+  // whether a thing is in stock.
+  //
+  // ຂາຍ is the POS itself, not a list of what has already been sold — a
+  // salesperson lands on the catalogue, the way they do on the web. The
+  // orders list and the promotion editor are back-office screens; they
+  // are on the web and on the phone, and on the till they were two more
+  // ways to end up on the wrong screen mid-sale.
   static const _tabletTabs = <_NavTab>[
     _NavTab(
       title: 'ຂາຍໜ້າຮ້ານ',
@@ -57,27 +59,12 @@ class _HomeScreenState extends State<HomeScreen> {
       page: PosWebScreen(),
     ),
     _NavTab(
-      title: 'Sale Order',
-      ownHeader: true,
-      label: 'ໃບສັ່ງຂາຍ',
-      icon: Icons.receipt_long_outlined,
-      activeIcon: Icons.receipt_long_rounded,
-      page: OrdersScreen(),
-    ),
-    _NavTab(
       title: 'ສິນຄ້າຄົງເຫຼືອ',
       ownHeader: true,
       label: 'ສິນຄ້າ',
       icon: Icons.inventory_2_outlined,
       activeIcon: Icons.inventory_2_rounded,
       page: InventoryScreen(),
-    ),
-    _NavTab(
-      title: 'ໂປຣໂມຊັນ',
-      label: 'ໂປຣ',
-      icon: Icons.local_offer_outlined,
-      activeIcon: Icons.local_offer_rounded,
-      page: PromotionManagementScreen(),
     ),
   ];
 

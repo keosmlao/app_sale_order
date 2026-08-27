@@ -157,14 +157,22 @@ class _PosWebScreenState extends State<PosWebScreen>
     final controller = _controller;
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: Stack(
-        children: [
-          if (controller != null) WebViewWidget(controller: controller),
-          if (_loading)
-            const Positioned.fill(
-              child: BrandedSpinner(label: 'ກຳລັງເປີດໜ້າຂາຍ…'),
-            ),
-        ],
+      // The page sizes itself to the viewport it is given, and the home
+      // shell deliberately does not pad the bottom — native screens handle
+      // their own insets. A web page cannot, so without this the pay
+      // button at the foot of the sale rail sits behind Android's
+      // navigation bar.
+      body: SafeArea(
+        top: false,
+        child: Stack(
+          children: [
+            if (controller != null) WebViewWidget(controller: controller),
+            if (_loading)
+              const Positioned.fill(
+                child: BrandedSpinner(label: 'ກຳລັງເປີດໜ້າຂາຍ…'),
+              ),
+          ],
+        ),
       ),
     );
   }
