@@ -40,14 +40,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Sell, sold, stock, promotions.
   //
-  // Two things, because a counter tablet does two things: sell, and check
-  // whether a thing is in stock.
+  // One thing, because a counter tablet does one thing: sell.
   //
   // ຂາຍ is the POS itself, not a list of what has already been sold — a
   // salesperson lands on the catalogue, the way they do on the web. The
-  // orders list and the promotion editor are back-office screens; they
-  // are on the web and on the phone, and on the till they were two more
-  // ways to end up on the wrong screen mid-sale.
+  // orders list, the promotion editor and the stock browser are all still
+  // on the web and on the phone; on the till they were only ways to end up
+  // on the wrong screen mid-sale, and the catalogue already prints each
+  // item's stock on its tile.
   static const _tabletTabs = <_NavTab>[
     _NavTab(
       title: 'ຂາຍໜ້າຮ້ານ',
@@ -57,14 +57,6 @@ class _HomeScreenState extends State<HomeScreen> {
       activeIcon: Icons.point_of_sale_rounded,
       // The web POS itself, not a rebuild of it. See pos_web_screen.dart.
       page: PosWebScreen(),
-    ),
-    _NavTab(
-      title: 'ສິນຄ້າຄົງເຫຼືອ',
-      ownHeader: true,
-      label: 'ສິນຄ້າ',
-      icon: Icons.inventory_2_outlined,
-      activeIcon: Icons.inventory_2_rounded,
-      page: InventoryScreen(),
     ),
   ];
 
@@ -129,10 +121,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final useRail = isTablet(context);
-    // The tablet is a counter till, not a personal device: it sells, checks
-    // stock and looks up promotions. The dashboard and profile are for the
-    // phone in someone's pocket, so they are not offered here — one fewer
-    // way to end up on the wrong screen mid-sale.
+    // The tablet is a counter till, not a personal device. The dashboard
+    // and profile are for the phone in someone's pocket, so they are not
+    // offered here — one fewer way to end up on the wrong screen mid-sale.
     final tabs = useRail ? _tabletTabs : _tabs;
     final safeIndex = _index >= tabs.length ? 0 : _index;
     final showAppBar = !tabs[safeIndex].ownHeader;
@@ -143,6 +134,21 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     if (useRail) {
+      // One screen, no chrome. A rail of one destination is a strip of
+      // glass spent saying "you are here" — the till sells, and the sales
+      // screen is the whole of it. Stock is on the tiles already, and the
+      // catalogue searches by name, code and barcode.
+      if (tabs.length == 1) {
+        return Scaffold(
+          backgroundColor: AppColors.bg,
+          appBar: showAppBar ? _appBar(tabs[safeIndex].title) : null,
+          body: SafeArea(
+            top: !showAppBar,
+            bottom: false,
+            child: _HomeContentSurface(child: stack),
+          ),
+        );
+      }
       return Scaffold(
         backgroundColor: AppColors.bg,
         appBar: showAppBar ? _appBar(tabs[safeIndex].title) : null,
