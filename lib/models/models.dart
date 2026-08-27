@@ -540,6 +540,9 @@ class InventoryItem {
   final double salesBalance;
   final double salesMinimumStock;
   final double salePriceKip;
+  // The storefront's online shop has a photo for this item. Only a flag —
+  // the bytes come from /api/products/image/<code> when a tile draws.
+  final bool hasImage;
 
   InventoryItem({
     required this.code,
@@ -559,6 +562,7 @@ class InventoryItem {
     this.salesBalance = 0,
     this.salesMinimumStock = 0,
     this.salePriceKip = 0,
+    this.hasImage = false,
   });
 
   double balanceFor(InventoryScope scope) =>
@@ -590,6 +594,7 @@ class InventoryItem {
     salesBalance: salesBalance ?? this.salesBalance,
     salesMinimumStock: salesMinimumStock ?? this.salesMinimumStock,
     salePriceKip: salePriceKip ?? this.salePriceKip,
+    hasImage: hasImage,
   );
 
   factory InventoryItem.fromJson(Map<String, dynamic> j) => InventoryItem(
@@ -635,6 +640,7 @@ class InventoryItem {
       salesBalance: stock,
       salesMinimumStock: _toDouble(j['minimumStock']),
       salePriceKip: _toDouble(j['price']),
+      hasImage: j['hasImage'] == true,
     );
   }
 

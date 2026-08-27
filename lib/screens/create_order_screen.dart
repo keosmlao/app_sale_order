@@ -3049,7 +3049,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           // "ຕູ້ເຢັນ HISE…" tells the counter nothing, and the price had
           // to be cut short too. Three leaves room to read the row.
           final columns = isTablet(context)
-              ? 3
+              ? 4
               : (box.maxWidth / 164).floor().clamp(2, 4);
           return GridView.builder(
             padding: const EdgeInsets.fromLTRB(
@@ -3062,7 +3062,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               crossAxisCount: columns,
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
-              mainAxisExtent: 178,
+              // Taller than the text-only tile was: the photo is the top
+              // half of the card now.
+              mainAxisExtent: isTablet(context) ? 236 : 200,
             ),
             itemCount: filtered.length,
             itemBuilder: (_, i) => _catalogCard(filtered[i]),
@@ -3071,6 +3073,73 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       ),
     );
   }
+
+  // The tile's photo, with the in-cart count on top of it.
+  //
+  // The image endpoint needs the session, so the bearer token rides in a
+  // header — the same one every other call uses. Items without a photo,
+  // and photos whose bytes have gone missing (38 of 2,509 rows point at
+  // nothing), fall back to the empty frame rather than a broken icon.
+  Widget _catalogPhoto(InventoryItem p, int qty) {
+    final api = AppScope.of(context).api;
+    final token = api.token;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(11),
+      child: Container(
+        width: double.infinity,
+        color: AppColors.cardElev,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (p.hasImage && token != null)
+              Image.network(
+                '${api.baseUrl}/api/products/image/${Uri.encodeComponent(p.code)}',
+                headers: {'Authorization': 'Bearer $token'},
+                // Contain, not cover: a fridge with its top cropped off is
+                // harder to recognise than one with white space beside it.
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => _catalogPhotoEmpty(),
+                loadingBuilder: (context, child, progress) =>
+                    progress == null ? child : _catalogPhotoEmpty(),
+              )
+            else
+              _catalogPhotoEmpty(),
+            if (qty > 0)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(kRadiusPill),
+                  ),
+                  child: Text(
+                    '$qty',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _catalogPhotoEmpty() => Center(
+    child: Icon(
+      Icons.image_outlined,
+      size: 26,
+      color: AppColors.textMuted.withValues(alpha: 0.45),
+    ),
+  );
 
   Widget _catalogCard(InventoryItem p) {
     final qty = _qtyByCode[p.code] ?? 0;
@@ -3114,17 +3183,20 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  p.nameLo,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    height: 1.35,
-                    fontWeight: FontWeight.w800,
-                    color: out ? AppColors.textMuted : AppColors.textPrimary,
-                  ),
+              // Sixty fridges have near-identical names; the picture is
+              // what tells them apart at a glance. 613 of the 701 items
+              // warehouse 1101 stocks have one.
+              Expanded(child: _catalogPhoto(p, qty)),
+              const SizedBox(height: 8),
+              Text(
+                p.nameLo,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.3,
+                  fontWeight: FontWeight.w800,
+                  color: out ? AppColors.textMuted : AppColors.textPrimary,
                 ),
               ),
               Divider(height: kSpace3, color: AppColors.divider),
@@ -3142,54 +3214,35 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                       ),
                     ),
                   ),
-                  // In the cart the count is what matters; before that, what
-                  // is left on the shelf. Never both.
-                  if (qty > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 2,
+                  // The in-cart count rides on the photo, so the footer is
+                  // always price + stock and the row never reflows as
+                  // items are added.
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: stockColor,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(kRadiusSm),
-                      ),
-                      child: Text(
-                        '$qty',
-                        style: const TextStyle(
+                      const SizedBox(width: 5),
+                      Text(
+                        p.hasSet
+                            ? 'ຊຸດ'
+                            : out
+                            ? 'ໝົດ'
+                            : _moneyFmt.format(stock),
+                        style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w900,
-                          color: Colors.white,
+                          color: stockColor,
                         ),
                       ),
-                    )
-                  else
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 7,
-                          height: 7,
-                          decoration: BoxDecoration(
-                            color: stockColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          p.hasSet
-                              ? 'ຊຸດ'
-                              : out
-                              ? 'ໝົດ'
-                              : _moneyFmt.format(stock),
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                            color: stockColor,
-                          ),
-                        ),
-                      ],
-                    ),
+                    ],
+                  ),
                 ],
               ),
             ],

@@ -3,7 +3,7 @@ import '../app_theme.dart';
 import '../services/presence.dart';
 import 'inventory_screen.dart';
 import 'my_dashboard_screen.dart';
-import 'pos_web_screen.dart';
+import 'create_order_screen.dart';
 import 'orders_screen.dart';
 import 'profile_screen.dart';
 
@@ -55,8 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
       label: 'ຂາຍ',
       icon: Icons.point_of_sale_outlined,
       activeIcon: Icons.point_of_sale_rounded,
-      // The web POS itself, not a rebuild of it. See pos_web_screen.dart.
-      page: PosWebScreen(),
+      page: CreateOrderScreen(embedded: true),
     ),
   ];
 

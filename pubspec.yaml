@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.5.1+20
+version: 1.6.0+21
 
 environment:
   sdk: ^3.8.1
@@ -58,10 +58,6 @@ dependencies:
   # intent is not silently refused.
   open_filex: ^4.7.0
   permission_handler: ^11.3.1
-  # The tablet's ຂາຍ tab is the web POS itself (screens/pos_web_screen.dart)
-  # — identical to the browser by construction rather than by upkeep.
-  webview_flutter: ^4.10.0
-  webview_flutter_android: ^4.3.0
   geolocator: ^13.0.0
 
 dev_dependencies:
