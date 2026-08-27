@@ -1301,9 +1301,42 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       }
     }
 
-    // Backorder is allowed for normal items — we no longer reject when
-    // stock < qty. The shortfall is shown inline on the cart row and the
-    // server writes an app_backorder row when the order is created.
+    // A normal line cannot exceed what the picked warehouse holds.
+    //
+    // Backorder used to be allowed here — the line took any quantity and
+    // the server recorded the shortfall. The counter sells what is on the
+    // shelf, so the line is capped instead; and when another warehouse
+    // holds enough, the cashier is asked whether to take it from there
+    // rather than being told they cannot have it.
+    if (!isSet) {
+      final available = _itemStock(item);
+      if (available < 0) {
+        // Stock for this shelf is not known yet — ask once, then re-read.
+        await _refreshStockForCodes([item.code], force: true);
+        if (!mounted) return false;
+      }
+      final cap = _itemStock(item).floor();
+      if (cap >= 0 && qty > cap) {
+        final moved = await _offerWarehouseWithStock(item, qty, cap);
+        if (!mounted) return false;
+        if (moved) {
+          // A new warehouse is pinned; its stock decides the cap now.
+          final newCap = _itemStock(item).floor();
+          if (newCap >= 0 && qty > newCap) {
+            qty = newCap;
+            _toast('ສາງນີ້ມີ $newCap ${item.unitName?.trim() ?? 'ອັນ'}');
+          }
+        } else {
+          if (cap < 1) {
+            _toast('ສາງນີ້ບໍ່ມີ stock ແລ້ວ');
+            return false;
+          }
+          qty = cap;
+          _toast('ສາງນີ້ມີ $cap ${item.unitName?.trim() ?? 'ອັນ'}');
+        }
+      }
+    }
+
     setState(() {
       if (!_allItems.any((p) => p.code == item.code)) {
         _allItems = [..._allItems, item];
@@ -1317,6 +1350,63 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     // Check BOGO promos after the qty change so any newly-met trigger
     // thresholds top up the bonus line for the user.
     await _maybeAutoAddBogoBonus();
+    return true;
+  }
+
+  // The picked warehouse is short. If another one holds the whole
+  // quantity, offer the move; returns true when the cashier took it.
+  //
+  // Only warehouses that can cover the full quantity are offered — a list
+  // that is also short is a list of the same problem somewhere else.
+  Future<bool> _offerWarehouseWithStock(
+    InventoryItem item,
+    int wanted,
+    int here,
+  ) async {
+    final current = _warehouseByItemCode[item.code]?.code;
+    List<_WarehouseStockOption> options;
+    try {
+      options = await _warehouseOptionsForSingleItem(item);
+    } catch (e) {
+      debugPrint('CreateOrder: warehouse options failed → $e');
+      return false;
+    }
+    if (!mounted) return false;
+    final elsewhere = options
+        .where((o) => o.warehouse.code != current && o.stock.floor() >= wanted)
+        .toList();
+    if (elsewhere.isEmpty) return false;
+    elsewhere.sort((a, b) => b.stock.compareTo(a.stock));
+
+    final picked = await showModalBottomSheet<_WarehouseStockOption>(
+      context: context,
+      constraints: _sheetConstraints(context),
+      isScrollControlled: true,
+      backgroundColor: AppColors.cardBg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _WarehouseStockPickerSheet(
+        item: item,
+        options: elsewhere,
+        fmt: _fmt,
+        headline: 'ສາງນີ້ມີ $here — ເອົາ $wanted ຈາກສາງອື່ນບໍ?',
+      ),
+    );
+    if (picked == null || !mounted) return false;
+
+    await _maybePickSerial(item, picked.warehouse.code);
+    if (!mounted) return false;
+    setState(() {
+      _warehouseByItemCode[item.code] = picked.warehouse;
+      _locationByItemCode[item.code] = picked.location;
+      final locationCode = picked.location.location?.trim() ?? '';
+      _stockByLineKey = {
+        ..._stockByLineKey,
+        _lineStockKey(item.code, picked.warehouse.code, locationCode):
+            picked.stock,
+      };
+    });
     return true;
   }
 
@@ -6339,11 +6429,15 @@ class _WarehouseStockPickerSheet extends StatelessWidget {
     required this.item,
     required this.options,
     required this.fmt,
+    this.headline,
   });
 
   final InventoryItem item;
   final List<_WarehouseStockOption> options;
   final NumberFormat fmt;
+  // Set when the sheet is asking a question rather than taking the first
+  // pick — "this warehouse has 2, take 5 from another?".
+  final String? headline;
 
   @override
   Widget build(BuildContext context) {
@@ -6370,12 +6464,14 @@ class _WarehouseStockPickerSheet extends StatelessWidget {
               children: [
                 Icon(Icons.warehouse_outlined, color: AppColors.gold),
                 SizedBox(width: 8),
-                Text(
-                  'ເລືອກສາງ / ບ່ອນຈັດເກັບ',
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 17,
+                Expanded(
+                  child: Text(
+                    headline ?? 'ເລືອກສາງ / ບ່ອນຈັດເກັບ',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 17,
+                    ),
                   ),
                 ),
               ],
