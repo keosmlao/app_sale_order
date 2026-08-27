@@ -8,7 +8,6 @@ import '../config.dart';
 import '../app_theme.dart';
 import '../models/models.dart';
 import '../services/api.dart';
-import '../services/promotions_engine.dart';
 import 'barcode_scanner_screen.dart';
 import '../components/ui_components.dart';
 
@@ -79,11 +78,20 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   // replaces `InventoryItem.salePriceKip` everywhere in the cart math.
   final Map<String, double> _approvedPriceByCode = {};
 
-  // Promotions — fetched once at bootstrap, evaluated client-side on every
-  // cart change so the user sees discounts before submit. Server re-evaluates
-  // on POST /api/orders, so these are preview-only (engine logic mirrors
-  // /lib/promotions-engine on the web).
+  // Promotions. The list arrives from /api/promotions/active already
+  // filtered to what is live right now — date window and shop-hours window
+  // both — so nothing here re-decides whether a promo applies. Cart
+  // pricing goes to /api/promotions/price, the one engine the POS and the
+  // order route use, and /api/orders re-prices at submit regardless. These
+  // maps are the preview it hands back.
   List<Promotion> _activePromos = const [];
+  // Debounce + generation guard for the pricing request. The generation
+  // stops a slow reply to an old cart from overwriting a newer one.
+  Timer? _pricingDebounce;
+  int _pricingRequest = 0;
+  // True when the last pricing call failed. The cart still works — the
+  // server prices the bill at submit — but promo numbers may be stale.
+  bool _pricingOffline = false;
   Map<String, double> _promoDiscountByCode = const {};
   Map<String, String> _promoLabelByCode = const {};
   Map<String, double> _customerDiscountByCode = const {};
@@ -138,6 +146,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   void dispose() {
     _searchCtl.dispose();
     _searchDebounce?.cancel();
+    _pricingDebounce?.cancel();
     super.dispose();
   }
 
@@ -395,12 +404,14 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   double _lineDiscountAmount(InventoryItem item, int qty) =>
       _unitPrice(item) * qty * (_discountPct / 100);
 
+  // _activePromos is already narrowed to what is live right now by
+  // /api/promotions/active — the server applies both the date window and
+  // the shop-hours window there, against Lao time rather than whatever
+  // clock this tablet happens to be set to.
   Promotion? _activePromoForProduct(String code) {
     if (_activePromos.isEmpty) return null;
-    final now = DateTime.now();
     final trimmed = code.trim();
     for (final p in _activePromos) {
-      if (!isPromoActiveNow(p, now)) continue;
       if (p.triggerItemCode?.trim() == trimmed) {
         return p;
       }
@@ -412,28 +423,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   // "choose promotion" control. Empty = no promo offered for this item.
   List<Promotion> _applicablePromosForProduct(String code) {
     if (_activePromos.isEmpty) return const [];
-    final now = DateTime.now();
     final t = code.trim();
     return _activePromos
-        .where(
-          (p) => isPromoActiveNow(p, now) && p.triggerItemCode?.trim() == t,
-        )
+        .where((p) => p.triggerItemCode?.trim() == t)
         .toList();
-  }
-
-  // Active promos after applying the cashier's per-item choices: an opted-out
-  // trigger drops all its promos; a chosen trigger keeps only that promo id;
-  // untouched triggers keep their defaults. Feeds the engine so preview and
-  // (via the submit payload) the server agree on what applies.
-  List<Promotion> _effectivePromos() {
-    return _activePromos.where((p) {
-      final trig = p.triggerItemCode?.trim() ?? '';
-      if (trig.isEmpty) return true;
-      if (!_promoChoiceByCode.containsKey(trig)) return true;
-      final chosen = _promoChoiceByCode[trig];
-      if (chosen == null || chosen.isEmpty) return false;
-      return p.id == chosen;
-    }).toList();
   }
 
   // Human-readable terms + value of a promotion, shown in the chooser sheet.
@@ -470,11 +463,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     }
   }
 
-  // Promotions that are active right now (date + time-of-day window).
-  List<Promotion> get _activeNowPromos {
-    final now = DateTime.now();
-    return _activePromos.where((p) => isPromoActiveNow(p, now)).toList();
-  }
+  // Everything in _activePromos is live right now — the server decided
+  // that. Kept as a named getter because the badge and the promo sheet
+  // both read it.
+  List<Promotion> get _activeNowPromos => _activePromos;
 
   // AppBar button → opens the active-promotions list. Carries a small count
   // badge so the cashier sees at a glance how many promos are live.
@@ -693,76 +685,100 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     });
   }
 
-  // Re-run the promotion engine against the current cart. Called whenever
-  // the cart shape changes (qty/items) or when promos are first loaded.
-  // Output (promoDiscountByCode / promoLabelByCode / totalPromoDiscount) is
-  // a snapshot — totals/widgets read from these maps directly.
+  // Re-price the cart. The promotion engine itself lives on the server
+  // (/api/promotions/price) — one engine, shared with the POS and with the
+  // order route that actually charges the customer, so the tablet can no
+  // longer show a total the bill disagrees with.
+  //
+  // The member % is still figured locally and applied immediately: it is
+  // plain arithmetic off the customer's discount rate, and waiting on the
+  // network to show it would make every qty tap feel slow. The response
+  // then overrides it, because a promotion can cancel the member discount
+  // on the lines it touches (awardsMemberDiscount=false).
+  //
+  // Called from inside setState() all over this screen, so it stays void
+  // and does its own state updates when the response lands.
   void _recomputePromotions() {
-    if (_activePromos.isEmpty || _qtyByCode.isEmpty) {
-      debugPrint(
-        '[Promo] _recomputePromotions: skip (promos=${_activePromos.length} cart=${_qtyByCode.length})',
+    _pricingRequest++;
+    final generation = _pricingRequest;
+
+    final lines = <CartLineInput>[];
+    final localDiscount = <String, double>{};
+    for (final entry in _qtyByCode.entries) {
+      final item = _itemByCode(entry.key);
+      if (item == null) continue;
+      final discount = _lineDiscountAmount(item, entry.value);
+      localDiscount[entry.key] = discount;
+      lines.add(
+        CartLineInput(
+          productId: entry.key,
+          quantity: entry.value,
+          price: _unitPrice(item),
+          customerDiscount: discount,
+        ),
       );
+    }
+
+    // Member % lands now; promo numbers follow when the server answers.
+    _customerDiscountByCode = localDiscount;
+
+    if (lines.isEmpty) {
+      _pricingDebounce?.cancel();
       _promoDiscountByCode = const {};
       _promoLabelByCode = const {};
-      _customerDiscountByCode = const {};
       _awardsPointsByCode = const {};
       _totalPromoDiscount = 0;
       return;
     }
-    final lines = <EngineLine>[];
-    final skippedNoItem = <String>[];
-    for (final entry in _qtyByCode.entries) {
-      final item = _itemByCode(entry.key);
-      if (item == null) {
-        skippedNoItem.add(entry.key);
-        continue;
-      }
-      lines.add(
-        EngineLine(
-          productId: entry.key,
-          quantity: entry.value,
-          price: _unitPrice(item),
-          customerDiscount: _lineDiscountAmount(item, entry.value),
-        ),
+
+    // Collapse a burst of taps (holding the + stepper, adding several
+    // items in a row) into one request.
+    _pricingDebounce?.cancel();
+    _pricingDebounce = Timer(const Duration(milliseconds: 250), () {
+      _fetchPricing(lines, generation);
+    });
+  }
+
+  Future<void> _fetchPricing(List<CartLineInput> lines, int generation) async {
+    try {
+      final priced = await AppScope.of(context).api.priceCart(
+        lines,
+        selections: Map<String, String?>.from(_promoChoiceByCode),
       );
-    }
-    debugPrint(
-      '[Promo] _recomputePromotions: ${lines.length} line(s) → '
-      '${lines.map((l) => "[${l.productId}]x${l.quantity}@${l.price}").join(",")}'
-      '${skippedNoItem.isEmpty ? "" : " (skipped no-item: ${skippedNoItem.join(",")})"}',
-    );
-    applyPromotions(lines, _effectivePromos(), DateTime.now());
+      // A newer cart change already went out — its answer is the current
+      // one, so drop this stale response rather than flickering back.
+      if (!mounted || generation != _pricingRequest) return;
 
-    final disc = <String, double>{};
-    final labels = <String, String>{};
-    final custDisc = <String, double>{};
-    final pts = <String, bool>{};
-    double total = 0;
-    for (final line in lines) {
-      if (!line.awardsMemberDiscount) {
-        line.customerDiscount = 0.0;
-        final netAmount = line.gross - line.promoDiscount;
-        line.amount = netAmount < 0.0 ? 0.0 : netAmount;
+      final disc = <String, double>{};
+      final labels = <String, String>{};
+      final custDisc = <String, double>{};
+      final pts = <String, bool>{};
+      double total = 0;
+      for (final line in priced) {
+        custDisc[line.productId] = line.customerDiscount;
+        pts[line.productId] = line.awardsPoints;
+        if (line.promoLabel.isNotEmpty) {
+          disc[line.productId] = line.promoDiscount;
+          labels[line.productId] = line.promoLabel;
+          total += line.promoDiscount;
+        }
       }
-      custDisc[line.productId] = line.customerDiscount;
-      pts[line.productId] = line.awardsPoints;
-
-      if (line.promoLabel.isNotEmpty) {
-        disc[line.productId] = line.promoDiscount;
-        labels[line.productId] = line.promoLabel;
-        total += line.promoDiscount;
-      }
+      setState(() {
+        _promoDiscountByCode = disc;
+        _promoLabelByCode = labels;
+        _customerDiscountByCode = custDisc;
+        _awardsPointsByCode = pts;
+        _totalPromoDiscount = total;
+        _pricingOffline = false;
+      });
+    } catch (e) {
+      debugPrint('[Promo] priceCart failed: $e');
+      if (!mounted || generation != _pricingRequest) return;
+      // Keep the last good promo numbers on screen and say so. The bill is
+      // priced by the server at submit either way, so the worst case here
+      // is a stale preview, never a wrong charge.
+      setState(() => _pricingOffline = true);
     }
-    debugPrint(
-      '[Promo] _recomputePromotions: result → '
-      'discount=${disc.entries.map((e) => "[${e.key}]=${e.value}").join(",")} '
-      'labels=${labels.entries.map((e) => "[${e.key}]=${e.value}").join(",")}',
-    );
-    _promoDiscountByCode = disc;
-    _promoLabelByCode = labels;
-    _customerDiscountByCode = custDisc;
-    _awardsPointsByCode = pts;
-    _totalPromoDiscount = total;
   }
 
   // Auto-add (or top up) bonus items when a BOGO promo's trigger qty is
@@ -776,16 +792,14 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       'cart keys=${_qtyByCode.entries.map((e) => "[${e.key}]=${e.value}").join(",")}',
     );
     if (_activePromos.isEmpty) return;
-    final now = DateTime.now();
     final added = <(String name, int qty, String promoName)>[];
     for (final p in _activePromos) {
-      final active = isPromoActiveNow(p, now);
       debugPrint(
-        '[Promo] check ${p.id}/${p.promoType}/${p.name} active=$active '
+        '[Promo] check ${p.id}/${p.promoType}/${p.name} '
         'trigger=${p.triggerItemCode}x${p.triggerQty} '
         'bonus=${p.bonusItemCode}x${p.bonusQty}',
       );
-      if (p.promoType != 'bogo' || !active) continue;
+      if (p.promoType != 'bogo') continue;
       final tCode = p.triggerItemCode?.trim() ?? '';
       final bCode = p.bonusItemCode?.trim() ?? '';
       final tQty = (p.triggerQty ?? 0).toInt();
@@ -3286,6 +3300,29 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           _summaryRow(
             'ສ່ວນຫຼຸດໂປຣໂມຊັ່ນ',
             '−${_moneyFmt.format(_totalPromoDiscount)} ກີບ',
+          ),
+        ],
+        // Promotions are priced by the server. If that call failed, the
+        // figures above are whatever it last returned — say so rather than
+        // letting a stale discount pass for a current one. The bill itself
+        // is priced again at submit, so this is a display warning only.
+        if (_pricingOffline) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Icon(
+                Icons.cloud_off_rounded,
+                size: 14,
+                color: Colors.orange,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'ຕໍ່ເຊີບເວີບໍ່ໄດ້ — ສ່ວນຫຼຸດໂປຣໂມຊັ່ນອາດບໍ່ທັນສະໄໝ',
+                  style: const TextStyle(fontSize: 11, color: Colors.orange),
+                ),
+              ),
+            ],
           ),
         ],
         if (_appliedExtraDiscount > 0) ...[

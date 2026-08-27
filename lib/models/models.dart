@@ -1715,3 +1715,65 @@ class SerialUnit {
     rack: (j['rack'] as String?)?.trim(),
   );
 }
+
+// ─── Cart pricing ────────────────────────────────────────────────
+// Wire types for /api/promotions/price, the single promotion engine.
+// The app sends what it knows about each line (item, qty, unit price,
+// the member discount it has computed) and gets back what that line
+// actually costs once promotions are applied.
+
+class CartLineInput {
+  final String productId;
+  final int quantity;
+  final double price;          // unit price KIP, before any discount
+  final double customerDiscount; // member % amount for the whole line
+
+  const CartLineInput({
+    required this.productId,
+    required this.quantity,
+    required this.price,
+    required this.customerDiscount,
+  });
+}
+
+class PricedLine {
+  final String productId;
+  final int quantity;
+  final double price;
+  final double gross;             // price × quantity
+  final double customerDiscount;  // zeroed when a promo denies stacking
+  final double promoDiscount;
+  final String promoLabel;        // '' when no promo touched the line
+  final double amount;            // net: gross − discounts, never below 0
+  final bool awardsPoints;
+  final bool awardsMemberDiscount;
+
+  const PricedLine({
+    required this.productId,
+    required this.quantity,
+    required this.price,
+    required this.gross,
+    required this.customerDiscount,
+    required this.promoDiscount,
+    required this.promoLabel,
+    required this.amount,
+    required this.awardsPoints,
+    required this.awardsMemberDiscount,
+  });
+
+  static double _num(dynamic v) =>
+      v == null ? 0.0 : (v is num ? v.toDouble() : double.tryParse('$v') ?? 0.0);
+
+  factory PricedLine.fromJson(Map<String, dynamic> j) => PricedLine(
+    productId: (j['productId'] ?? '').toString(),
+    quantity: _num(j['quantity']).toInt(),
+    price: _num(j['price']),
+    gross: _num(j['gross']),
+    customerDiscount: _num(j['customerDiscount']),
+    promoDiscount: _num(j['promoDiscount']),
+    promoLabel: (j['promoLabel'] ?? '').toString(),
+    amount: _num(j['amount']),
+    awardsPoints: j['awardsPoints'] != false,
+    awardsMemberDiscount: j['awardsMemberDiscount'] != false,
+  );
+}

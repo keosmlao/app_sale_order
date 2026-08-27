@@ -6,7 +6,6 @@ import '../app_scope.dart';
 import '../app_theme.dart';
 import '../models/models.dart';
 import '../services/inventory_cache.dart';
-import '../services/promotions_engine.dart';
 import 'inventory_detail_screen.dart';
 import '../components/ui_components.dart';
 
@@ -35,12 +34,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
   String? _error;
   String _query = '';
 
+  // The list from /api/promotions/active is already live-only, so this is
+  // just a lookup by trigger item.
   Promotion? _activePromoForProduct(String code) {
     if (_activePromos.isEmpty) return null;
-    final now = DateTime.now();
     final trimmed = code.trim();
     for (final p in _activePromos) {
-      if (!isPromoActiveNow(p, now)) continue;
       if (p.triggerItemCode?.trim() == trimmed) return p;
     }
     return null;

@@ -15,6 +15,7 @@ class AppRelease {
     required this.minBuildNumber,
     required this.downloadUrl,
     required this.notes,
+    this.installedVersion = '',
   });
 
   final String version;
@@ -22,6 +23,10 @@ class AppRelease {
   final int minBuildNumber;
   final String downloadUrl;
   final String notes;
+  // The build actually running on this device. Filled in by
+  // mandatoryUpdate(), not by the server — shown on the update screen so
+  // whoever is holding the tablet can see which version it is stuck on.
+  final String installedVersion;
 
   static AppRelease? tryParse(Object? raw) {
     if (raw is! Map<String, dynamic>) return null;
@@ -67,7 +72,14 @@ class AppUpdateService {
       );
       if (release == null) return null;
       if (current >= release.minBuildNumber) return null;
-      return release;
+      return AppRelease(
+        version: release.version,
+        buildNumber: release.buildNumber,
+        minBuildNumber: release.minBuildNumber,
+        downloadUrl: release.downloadUrl,
+        notes: release.notes,
+        installedVersion: '${info.version}+${info.buildNumber}',
+      );
     } catch (_) {
       return null;
     }
@@ -126,6 +138,26 @@ class ForcedUpdateScreen extends StatelessWidget {
                       fontSize: 13,
                       height: 1.5,
                       color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: kSpace3),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: kSpace4,
+                      vertical: kSpace2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardElev,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(
+                      'ເວີຊັນປັດຈຸບັນ: ${release.installedVersion.isEmpty ? '—' : release.installedVersion}'
+                      '   •   ຕ້ອງການ: ${release.version}+${release.minBuildNumber}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
                     ),
                   ),
                   if (release.notes.isNotEmpty) ...[

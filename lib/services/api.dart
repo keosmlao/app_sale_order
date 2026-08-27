@@ -682,6 +682,44 @@ class ApiClient {
     return SetAvailability.fromJson(data);
   }
 
+
+  // Price the cart against the live promotions — server-side.
+  //
+  // The app used to run its own hand-ported copy of the promotion engine
+  // (lib/services/promotions_engine.dart). Two engines meant two sets of
+  // numbers the moment either changed, so the copy is gone and this is the
+  // one engine, shared with the POS and with /api/orders.
+  //
+  // `selections` maps a trigger item code to the promotion id the cashier
+  // picked, or null when they declined every promo on that trigger.
+  Future<List<PricedLine>> priceCart(
+    List<CartLineInput> lines, {
+    Map<String, String?> selections = const {},
+  }) async {
+    final res = await _post(
+      _uri('/api/promotions/price'),
+      headers: _headers(json: true),
+      body: jsonEncode({
+        'lines': lines
+            .map(
+              (l) => {
+                'productId': l.productId,
+                'quantity': l.quantity,
+                'price': l.price,
+                'customerDiscount': l.customerDiscount,
+              },
+            )
+            .toList(),
+        'selections': selections,
+      }),
+    );
+    final data = _decode(res) as Map<String, dynamic>;
+    final rows = (data['lines'] as List<dynamic>? ?? const []);
+    return rows
+        .map((e) => PricedLine.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<Promotion>> fetchActivePromotions() async {
     final uri = _uri('/api/promotions/active');
     final hdrs = _headers();
