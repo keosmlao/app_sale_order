@@ -1500,6 +1500,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               warehouse: picked.warehouse,
               location: picked.location,
               qty: take,
+              stock: picked.stock,
               serialNo: unit?.sn,
               serialIsn: unit?.isn,
             ),
@@ -4168,152 +4169,172 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         rows.add(Divider(height: 1, color: AppColors.divider));
       }
       final extras = _extraAllocByCode[p.code] ?? const <_ExtraAllocation>[];
-      // The quantity this warehouse is being asked for — the whole line
-      // less whatever other warehouses are covering. Without this the row
-      // measured the full quantity against one shelf and cried backorder
-      // over stock already accounted for somewhere else.
-      rows.add(
-        _SelectedRow(
-          item: p,
-          qty: qty,
-          coveredHere: qty - _extraQtyFor(p.code),
-          stock: stock,
-          warehouse: _warehouseByItemCode[p.code],
-          location: _locationByItemCode[p.code],
-          serial: _serialByItemCode[p.code],
-          subtotal: gross,
-          discountPct: _discountPct,
-          discountAmount: discountAmount,
-          lineTotal: lineTotal,
-          unitPrice: unitPrice,
-          effectiveUnitPrice: effectiveUnitPrice,
-          approvedPrice: _approvedPriceByCode[p.code],
-          lineSalesperson:
-              _salespersonByItemCode[p.code] ?? _selectedSalesperson,
-          promoDiscount: promo,
-          promoLabel: _promoLabelByCode[p.code] ?? '',
-          isFreeBonus: isFreeBonus,
-          isPromoSold: isPromoSold,
-          isLinkedBonus: isLinkedBonus,
-          isSet: _isSetItem(p),
-          setDetails: _setDetailsByCode[p.code] ?? const [],
-          fmt: _moneyFmt,
-          onDec: () async {
+      // One row per warehouse, the way the web does it: a cart line there
+      // is (product, warehouse, shelf), so the same product taken from two
+      // places is two rows. The app keeps one entry per product underneath
+      // — price, promotion and approved price are all per product, and
+      // splitting the money path is how bills go wrong — but what the
+      // counter sees, and what goes on the bill, is a row per warehouse.
+      //
+      // The money is shared out by quantity, so the rows still add up to
+      // the line.
+      final primaryQty = qty - _extraQtyFor(p.code);
+      final share = qty > 0 ? 1 / qty : 0.0;
+
+      void addRow({
+        required int rowQty,
+        required Warehouse? wh,
+        required StockLocation? loc,
+        required double rowStock,
+        required SerialUnit? unit,
+        required VoidCallback onRowDec,
+        required VoidCallback? onRowInc,
+        required VoidCallback onRowRemove,
+        required VoidCallback onRowWarehouse,
+      }) {
+        final part = share * rowQty;
+        rows.add(
+          _SelectedRow(
+            item: p,
+            qty: rowQty,
+            stock: rowStock,
+            warehouse: wh,
+            location: loc,
+            serial: unit,
+            subtotal: unitPrice * rowQty,
+            discountPct: _discountPct,
+            discountAmount: discountAmount * part,
+            lineTotal: lineTotal * part,
+            unitPrice: unitPrice,
+            effectiveUnitPrice: effectiveUnitPrice,
+            approvedPrice: _approvedPriceByCode[p.code],
+            lineSalesperson:
+                _salespersonByItemCode[p.code] ?? _selectedSalesperson,
+            promoDiscount: promo * part,
+            promoLabel: promoLabel,
+            isFreeBonus: isFreeBonus,
+            isPromoSold: isPromoSold,
+            isLinkedBonus: isLinkedBonus,
+            isSet: _isSetItem(p),
+            setDetails: _setDetailsByCode[p.code] ?? const [],
+            fmt: _moneyFmt,
+            onDec: onRowDec,
+            onInc: onRowInc,
+            onRemove: onRowRemove,
+            onPickWarehouse: onRowWarehouse,
+            onPickSalesperson: () async {
+              await _pickSalespersonForLine(p);
+              refresh();
+            },
+            onRequestPrice: () async {
+              await _requestPriceForLine(p);
+              refresh();
+            },
+          ),
+        );
+      }
+
+      // The line's own warehouse. Skipped once the other warehouses cover
+      // the whole quantity — a row for nothing is a row to misread.
+      if (primaryQty > 0 || extras.isEmpty) {
+        addRow(
+          rowQty: primaryQty,
+          wh: _warehouseByItemCode[p.code],
+          loc: _locationByItemCode[p.code],
+          rowStock: stock,
+          unit: _serialByItemCode[p.code],
+          onRowDec: () async {
+            // Taking from the total comes off this warehouse first, which
+            // is what the row is asking for.
             await _setQty(p, qty - 1);
             refresh();
           },
-          onInc: () async {
+          onRowInc: () async {
             await _setQty(p, qty + 1);
             refresh();
           },
-          onRemove: () async {
+          onRowRemove: () async {
             await _setQty(p, 0);
             refresh();
           },
-          onPickWarehouse: () async {
+          onRowWarehouse: () async {
             await _pickWarehouseForLine(p);
             refresh();
           },
-          onPickSalesperson: () async {
-            await _pickSalespersonForLine(p);
-            refresh();
-          },
-          onRequestPrice: () async {
-            await _requestPriceForLine(p);
-            refresh();
-          },
-        ),
-      );
-      // Where the rest of the line is coming from. Only drawn when the
-      // line reaches past its own warehouse, which is rare — but when it
-      // happens the counter has to be able to see it, or they will pick
-      // the whole quantity off one shelf.
-      if (extras.isNotEmpty) {
-        final primary = qty - _extraQtyFor(p.code);
-        rows.add(
-          Padding(
-            padding: const EdgeInsets.only(top: 6, bottom: 2),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _allocRow(
-                  _warehouseLabel(_warehouseByItemCode[p.code]),
-                  primary,
-                  onRemove: null,
+        );
+      }
+
+      for (final extra in extras) {
+        if (i > 0 || primaryQty > 0 || extras.first != extra) {
+          rows.add(Divider(height: 1, color: AppColors.divider));
+        }
+        addRow(
+          rowQty: extra.qty,
+          wh: extra.warehouse,
+          loc: extra.location,
+          rowStock: extra.stock,
+          unit: extra.serialNo == null
+              ? null
+              : SerialUnit(
+                  sn: extra.serialNo!,
+                  isn: extra.serialIsn,
+                  location: extra.location.location,
+                  rack: null,
                 ),
-                for (final extra in extras)
-                  _allocRow(
-                    _warehouseLabel(extra.warehouse),
-                    extra.qty,
-                    onRemove: () async {
-                      setState(() {
-                        final list = _extraAllocByCode[p.code];
-                        list?.remove(extra);
-                        if (list != null && list.isEmpty) {
-                          _extraAllocByCode.remove(p.code);
-                        }
-                      });
-                      // The line is smaller by what was taken away.
-                      await _setQty(p, qty - extra.qty);
-                      refresh();
-                    },
-                  ),
-              ],
-            ),
-          ),
+          onRowDec: () async {
+            await _changeExtra(p, extra, extra.qty - 1);
+            refresh();
+          },
+          onRowInc: extra.qty >= extra.stock.floor()
+              ? null
+              : () async {
+                  await _changeExtra(p, extra, extra.qty + 1);
+                  refresh();
+                },
+          onRowRemove: () async {
+            await _changeExtra(p, extra, 0);
+            refresh();
+          },
+          onRowWarehouse: () async {
+            // Changing this part's warehouse means dropping it and
+            // choosing again, which the shortfall flow already does.
+            await _changeExtra(p, extra, 0);
+            refresh();
+          },
         );
       }
     }
     return rows;
   }
 
-  // "ສາງຂົວຫຼວງ 1(ໜ້າຮ້ານ…)" is most of a narrow row; the code and the
-  // first words carry it.
-  String _warehouseLabel(Warehouse? wh) {
-    if (wh == null) return '—';
-    final name = wh.name.trim();
-    if (name.isEmpty || name == wh.code) return 'ສາງ ${wh.code}';
-    return '${wh.code} · $name';
-  }
-
-  Widget _allocRow(String label, int qty, {Future<void> Function()? onRemove}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          Icon(Icons.warehouse_outlined, size: 13, color: AppColors.textMuted),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-            ),
-          ),
-          Text(
-            '× $qty',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          if (onRemove != null)
-            IconButton(
-              onPressed: () => unawaited(onRemove()),
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              padding: EdgeInsets.zero,
-              icon: Icon(
-                Icons.close_rounded,
-                size: 14,
-                color: AppColors.textMuted,
-              ),
-            ),
-        ],
-      ),
-    );
+  // Resize (or drop) one of a line's other warehouses, keeping the line's
+  // total in step with it.
+  Future<void> _changeExtra(
+    InventoryItem item,
+    _ExtraAllocation extra,
+    int newQty,
+  ) async {
+    final total = _qtyByCode[item.code] ?? 0;
+    final delta = newQty - extra.qty;
+    final list = _extraAllocByCode[item.code];
+    if (list == null) return;
+    setState(() {
+      if (newQty <= 0) {
+        list.remove(extra);
+        if (list.isEmpty) _extraAllocByCode.remove(item.code);
+      } else {
+        extra.qty = newQty;
+      }
+    });
+    final nextTotal = total + delta;
+    if (nextTotal <= 0) {
+      await _setQty(item, 0);
+      return;
+    }
+    setState(() {
+      _qtyByCode[item.code] = nextTotal;
+      _recomputePromotions();
+    });
   }
 
   // ── Inline product search ─────────────────────────────────────────────
@@ -4857,7 +4878,6 @@ class _SelectedRow extends StatelessWidget {
   const _SelectedRow({
     required this.item,
     required this.qty,
-    this.coveredHere,
     required this.stock,
     required this.warehouse,
     this.serial,
@@ -4888,9 +4908,6 @@ class _SelectedRow extends StatelessWidget {
 
   final InventoryItem item;
   final int qty;
-  // How much of `qty` this row's own warehouse has to supply. Null means
-  // all of it; lower when the line also draws on another warehouse.
-  final int? coveredHere;
   final double stock;
   final SerialUnit? serial;
   final Warehouse? warehouse;
@@ -4940,8 +4957,7 @@ class _SelectedRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasWarehouse = warehouse != null && location != null;
     final hasDiscount = discountPct > 0 && discountAmount > 0;
-    final needHere = coveredHere ?? qty;
-    final hasBackorder = hasWarehouse && stock >= 0 && needHere > stock;
+    final hasBackorder = hasWarehouse && stock >= 0 && qty > stock;
     final hasPromo = promoLabel.isNotEmpty;
     final discountPctLabel = discountPct == discountPct.toInt()
         ? discountPct.toInt().toString()
@@ -5284,7 +5300,7 @@ class _SelectedRow extends StatelessWidget {
                   const SizedBox(width: 4),
                   Flexible(
                     child: Text(
-                      'Backorder · ມີ ${stock == stock.toInt() ? stock.toInt() : stock.toStringAsFixed(2)} · ຂາດ ${needHere - stock.toInt() > 0 ? needHere - stock.toInt() : (needHere - stock).toStringAsFixed(2)}',
+                      'Backorder · ມີ ${stock == stock.toInt() ? stock.toInt() : stock.toStringAsFixed(2)} · ຂາດ ${qty - stock.toInt() > 0 ? qty - stock.toInt() : (qty - stock).toStringAsFixed(2)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -7572,6 +7588,7 @@ class _ExtraAllocation {
     required this.warehouse,
     required this.location,
     required this.qty,
+    required this.stock,
     this.serialNo,
     this.serialIsn,
   });
@@ -7579,6 +7596,9 @@ class _ExtraAllocation {
   final Warehouse warehouse;
   final StockLocation location;
   int qty;
+  // What that warehouse held when it was chosen — the row shows its own
+  // shelf, not the primary warehouse's.
+  final double stock;
   final String? serialNo;
   final String? serialIsn;
 }
