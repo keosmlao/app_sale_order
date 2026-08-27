@@ -100,6 +100,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   Timer? _catalogDebounce;
   int _catalogSeq = 0;
 
+  // Which of the two portrait tabs is showing: 0 shop, 1 cart.
+  int _portraitTab = 0;
+
   // Debounce + generation guard for the pricing request. The generation
   // stops a slow reply to an old cart from overwriting a newer one.
   Timer? _pricingDebounce;
@@ -2049,7 +2052,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       // On a tablet the pay button belongs at the foot of the sale rail,
       // under the total it is paying — where the web puts it — not spread
       // across the bottom of the catalogue as well.
-      bottomNavigationBar: _loading || isTablet(context)
+      bottomNavigationBar: _loading
+          ? null
+          : _usesShopCartNav(context)
+          ? _shopCartNav()
+          : isTablet(context)
           ? null
           : _buildMainSubmitBar(),
     );
@@ -2106,86 +2113,227 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     // The numbered 1-2-3 wizard is dropped at this width, as the web drops
     // it. It exists to say what step is next on a screen that shows one step
     // at a time; with everything on the glass it is chrome eating height.
-    final totalQty = _qtyByCode.values.fold<int>(0, (a, b) => a + b);
     final railWidth = MediaQuery.of(context).size.width * 0.4;
 
+    // Stood upright there is no room for two panes side by side — the
+    // catalogue would get 370px and the tiles would be back to two across.
+    // So the two become two screens, the way a shopping app does it:
+    // browse, then look at the basket. See _shopCartNav().
+    if (_usesShopCartNav(context)) {
+      return IndexedStack(
+        index: _portraitTab,
+        children: [
+          Column(children: [_shopPaneHeader(), _shopPane()]),
+          _cartPane(selected),
+        ],
+      );
+    }
+
+    // Catalogue on the left, the sale on the right. Two panes, not three —
+    // the web tried a separate cart column and dropped it, because between
+    // sales (which is most of the time) it sat empty while the catalogue
+    // went short. Cart and checkout share one rail; the catalogue takes the
+    // width that frees up and runs four tiles across.
+    //
+    // The numbered 1-2-3 wizard is dropped at this width, as the web drops
+    // it. It exists to say what step is next on a screen that shows one step
+    // at a time; with everything on the glass it is chrome eating height.
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: Column(
-            children: [
-              // The web labels the catalogue column and counts it. When the
-              // POS is the tab there is no app bar overhead to carry the
-              // promo button, so it rides here.
-              if (widget.embedded)
-                _paneHeader(
-                  icon: Icons.inventory_2_rounded,
-                  label: 'ສິນຄ້າ',
-                  trailing: _catalogBusy ? '…' : '${_catalog.length} ລາຍການ',
-                  action: _buildPromoAppBarButton(compact: true),
-                ),
-              _buildSearchRow(refresh: () => setState(() {})),
-              Expanded(child: _catalogGrid()),
-            ],
-          ),
-        ),
+        Expanded(child: Column(children: [_shopPaneHeader(), _shopPane()])),
         Container(width: 1, color: AppColors.border),
         SizedBox(
           // minmax(430px, 500px), the rail's own sizing on the web.
           width: railWidth.clamp(430.0, 500.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _paneHeader(
-                icon: Icons.shopping_cart_rounded,
-                label: 'ກະຕ່າຂາຍ',
-                trailing: selected.isEmpty
-                    ? null
-                    : '${selected.length} ລາຍການ · $totalQty ອັນ',
-              ),
-              Expanded(
-                child: ListView(
-                  key: const PageStorageKey('create-order-sale'),
-                  padding: const EdgeInsets.fromLTRB(
-                    kSpace3,
-                    kSpace3,
-                    kSpace3,
-                    kSpace5,
-                  ),
-                  // Who is buying, who is selling, what is on the bill.
-                  // The customer sits first because the price of everything
-                  // under it depends on the answer. What the bill comes to
-                  // and how it leaves the shop are in the pay bar below,
-                  // pinned, so a long cart cannot push them out of view.
-                  children: [
-                    _customerStepBody(),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'ຜູ້ຂາຍ: ${_selectedSalesperson?.displayName ?? '—'}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: AppColors.textMuted,
+          child: _cartPane(selected),
+        ),
+      ],
+    );
+  }
+
+  // Shop / cart, the way a shopping app does it. The cart carries the
+  // item count so the seller can see the basket filling without leaving
+  // the shelf.
+  Widget _shopCartNav() {
+    final count = _qtyByCode.values.fold<int>(0, (a, b) => a + b);
+    Widget tab({
+      required int index,
+      required IconData icon,
+      required IconData activeIcon,
+      required String label,
+      int badge = 0,
+    }) {
+      final active = _portraitTab == index;
+      return Expanded(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => setState(() => _portraitTab = index),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Icon(
+                        active ? activeIcon : icon,
+                        size: 22,
+                        color: active ? AppColors.primary : AppColors.textMuted,
+                      ),
+                      if (badge > 0)
+                        Positioned(
+                          right: -8,
+                          top: -5,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 1,
+                            ),
+                            constraints: const BoxConstraints(minWidth: 16),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(kRadiusPill),
+                              border: Border.all(
+                                color: AppColors.cardBg,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Text(
+                              '$badge',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                height: 1.2,
+                              ),
                             ),
                           ),
                         ),
-                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: active ? AppColors.primary : AppColors.textMuted,
                     ),
-                    const SizedBox(height: kSpace3),
-                    _itemsSectionBody(selected),
-                    const SizedBox(height: kSpace3),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              _buildMainSubmitBar(),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            tab(
+              index: 0,
+              icon: Icons.storefront_outlined,
+              activeIcon: Icons.storefront_rounded,
+              label: 'ຮ້ານ',
+            ),
+            tab(
+              index: 1,
+              icon: Icons.shopping_cart_outlined,
+              activeIcon: Icons.shopping_cart_rounded,
+              label: 'ກະຕ່າ',
+              badge: count,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Landscape splits the sale across two panes; portrait splits it across
+  // two tabs. Both are the same two things — what is on the shelf, and
+  // what is on the bill.
+  bool _usesShopCartNav(BuildContext context) {
+    if (!isTablet(context)) return false;
+    return MediaQuery.of(context).size.width < 1180;
+  }
+
+  Widget _shopPaneHeader() {
+    // The web labels the catalogue column and counts it. When the POS is
+    // the tab there is no app bar overhead to carry the promo button, so
+    // it rides here.
+    if (!widget.embedded) return const SizedBox.shrink();
+    return _paneHeader(
+      icon: Icons.inventory_2_rounded,
+      label: 'ສິນຄ້າ',
+      trailing: _catalogBusy ? '…' : '${_catalog.length} ລາຍການ',
+      action: _buildPromoAppBarButton(compact: true),
+    );
+  }
+
+  Widget _shopPane() {
+    return Expanded(
+      child: Column(
+        children: [
+          _buildSearchRow(refresh: () => setState(() {})),
+          Expanded(child: _catalogGrid()),
+        ],
+      ),
+    );
+  }
+
+  Widget _cartPane(List<InventoryItem> selected) {
+    final totalQty = _qtyByCode.values.fold<int>(0, (a, b) => a + b);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _paneHeader(
+          icon: Icons.shopping_cart_rounded,
+          label: 'ກະຕ່າຂາຍ',
+          trailing: selected.isEmpty
+              ? null
+              : '${selected.length} ລາຍການ · $totalQty ອັນ',
+        ),
+        Expanded(
+          child: ListView(
+            key: const PageStorageKey('create-order-sale'),
+            padding: const EdgeInsets.fromLTRB(
+              kSpace3,
+              kSpace3,
+              kSpace3,
+              kSpace5,
+            ),
+            // Who is buying, who is selling, what is on the bill. The
+            // customer sits first because the price of everything under it
+            // depends on the answer. What the bill comes to and how it
+            // leaves the shop are in the pay bar below, pinned, so a long
+            // cart cannot push them out of view.
+            children: [
+              _customerStepBody(),
+              const SizedBox(height: 6),
+              Text(
+                'ຜູ້ຂາຍ: ${_selectedSalesperson?.displayName ?? '—'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+              ),
+              const SizedBox(height: kSpace3),
+              _itemsSectionBody(selected),
+              const SizedBox(height: kSpace3),
             ],
           ),
         ),
+        _buildMainSubmitBar(),
       ],
     );
   }
@@ -3277,6 +3425,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       _totalPromoDiscount = 0;
       _query = '';
       _searchCtl.clear();
+      // Back to the shelf for the next customer, not the empty basket
+      // they have not filled yet.
+      _portraitTab = 0;
     });
     _reloadCatalog();
   }
