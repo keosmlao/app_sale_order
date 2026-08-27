@@ -2215,9 +2215,21 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     const SizedBox(height: kSpace3),
                     _railBlock('ສະຫຼຸບ', _summarySection()),
                     const SizedBox(height: kSpace3),
-                    _railBlock('ການຮັບສິນຄ້າ', _deliveryPickerRow()),
-                    const SizedBox(height: kSpace3),
-                    _railBlock('ສ່ວນຫຼຸດ ແລະ ໝາຍເຫດ', _compactSettingsRow()),
+                    // One block, the way the web keeps "ຈັດສົ່ງ · ໝາຍເຫດ"
+                    // to a single row: two labelled cards for what is
+                    // mostly one decision cost more height than the cart
+                    // lines above them.
+                    _railBlock(
+                      'ຈັດສົ່ງ · ສ່ວນຫຼຸດ · ໝາຍເຫດ',
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _deliveryPickerRow(),
+                          const SizedBox(height: 8),
+                          _compactSettingsRow(),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -2753,7 +2765,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     final enabled = blocker == null && !_submitting;
     final label = _submitting
         ? 'ກຳລັງບັນທຶກ…'
-        : (widget.editOrder != null ? 'ບັນທຶກການແກ້ໄຂ' : 'ສ້າງບິນ');
+        : (widget.editOrder != null ? 'ບັນທຶກການແກ້ໄຂ' : 'ສັ່ງໄປຮັບເງິນ');
     // Tap-through for blockers opens the missing picker directly.
     final onTap = enabled ? _submit : (!_submitting ? blockerAction : null);
 
@@ -4419,19 +4431,24 @@ class _SelectedRow extends StatelessWidget {
             const SizedBox(height: 6),
             _SetComponentsBox(setDetails: setDetails, setQty: qty, fmt: fmt),
           ],
-          const SizedBox(height: 8),
-          _CartActionChip(
-            icon: approvedPrice != null ? Icons.verified : Icons.discount,
-            title: approvedPrice != null ? 'ລາຄາພິເສດ' : 'ຂໍລາຄາພິເສດ',
-            value: approvedPrice != null
-                ? '${fmt.format(approvedPrice!)} ກີບ'
-                : 'ສົ່ງຄຳຂໍໃຫ້ຜູ້ຈັດການ',
-            meta: approvedPrice != null ? 'ອະນຸມັດແລ້ວ' : null,
-            active: approvedPrice != null,
-            color: approvedPrice != null
-                ? AppColors.success
-                : AppColors.warning,
-            onTap: approvedPrice == null ? onRequestPrice : null,
+          // Special price is a rare action, so it gets a chip the size of
+          // one. As a full-width box with a title, a value and a meta line
+          // it was three lines on every row of the cart — the web keeps it
+          // to a chip and only shows it on the row being edited.
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _CartMiniActionChip(
+              icon: approvedPrice != null ? Icons.verified : Icons.discount,
+              label: approvedPrice != null
+                  ? 'ລາຄາພິເສດ ${fmt.format(approvedPrice!)}'
+                  : 'ຂໍລາຄາພິເສດ',
+              active: approvedPrice != null,
+              color: approvedPrice != null
+                  ? AppColors.success
+                  : AppColors.warning,
+              onTap: approvedPrice == null ? onRequestPrice : () {},
+            ),
           ),
 
           // Promo label line — slim inline text in the engine's accent
@@ -4601,117 +4618,6 @@ class _SetComponentsBox extends StatelessWidget {
                 ),
               ),
         ],
-      ),
-    );
-  }
-}
-
-class _CartActionChip extends StatelessWidget {
-  const _CartActionChip({
-    required this.icon,
-    required this.title,
-    required this.value,
-    required this.active,
-    required this.color,
-    this.meta,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String value;
-  final String? meta;
-  final bool active;
-  final Color color;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final bg = active
-        ? color.withValues(alpha: ThemeService.isDark ? 0.18 : 0.10)
-        : AppColors.cardBg;
-    final border = active
-        ? color.withValues(alpha: 0.42)
-        : AppColors.warning.withValues(alpha: 0.42);
-    final valueColor = active ? AppColors.textPrimary : AppColors.warning;
-    final metaText = meta?.trim();
-
-    return Material(
-      color: bg,
-      borderRadius: BorderRadius.circular(kRadiusMd),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(kRadiusMd),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 44),
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-          decoration: BoxDecoration(
-            border: Border.all(color: border),
-            borderRadius: BorderRadius.circular(kRadiusMd),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 30,
-                height: 26,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, size: 14, color: color),
-              ),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 1),
-                    Text(
-                      value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: valueColor,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w900,
-                        height: 1.15,
-                      ),
-                    ),
-                    if (metaText != null && metaText.isNotEmpty) ...[
-                      const SizedBox(height: 1),
-                      Text(
-                        metaText,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (onTap != null) ...[
-                const SizedBox(width: 3),
-                Icon(Icons.edit_outlined, size: 13, color: color),
-              ],
-            ],
-          ),
-        ),
       ),
     );
   }
