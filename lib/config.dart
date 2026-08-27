@@ -4,9 +4,16 @@ import 'app_theme.dart';
 class AppConfig {
   // Compile-time fallback. Overridden at runtime by [ConfigService] when the
   // user picks a URL in settings.
+  //
+  // 10.0.2.2 is the Android emulator's alias for the developer's own
+  // machine, which is right on a laptop and useless on a shop tablet: a
+  // fresh install pointed at nothing and had to be configured by hand
+  // before it could reach anything. The default is the live server; a
+  // developer overrides it with --dart-define=API_URL=..., and anyone can
+  // change it in settings.
   static const String defaultApiBaseUrl = String.fromEnvironment(
     'API_URL',
-    defaultValue: 'http://10.0.2.2:3000',
+    defaultValue: 'https://klpos.odienmall.com',
   );
 
   // Kept for back-compat. Anywhere reading this still gets the compile-time

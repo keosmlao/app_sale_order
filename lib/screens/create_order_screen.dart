@@ -1899,22 +1899,18 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       );
     }
 
+    // Catalogue on the left, the sale on the right — the shape the web POS
+    // settled on. The products are the work surface, so they stay visible
+    // instead of living behind the "add product" sheet; everything about
+    // the bill itself collects in the rail.
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child: ListView(
-            key: const PageStorageKey('create-order-entry-left'),
-            padding: const EdgeInsets.fromLTRB(
-              kSpace4,
-              kSpace4,
-              kSpace3,
-              kSpace5,
-            ),
+          child: Column(
             children: [
-              customerStep,
-              const SizedBox(height: kSpace4),
-              itemsStep,
+              _buildSearchRow(refresh: () => setState(() {})),
+              Expanded(child: _catalogGrid()),
             ],
           ),
         ),
@@ -1930,6 +1926,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               kSpace5,
             ),
             children: [
+              customerStep,
+              const SizedBox(height: kSpace4),
+              itemsStep,
+              const SizedBox(height: kSpace4),
               summaryStep,
               const SizedBox(height: kSpace4),
               deliveryStep,
@@ -2647,6 +2647,183 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         },
       ),
     );
+  }
+
+
+  // ── Tablet catalogue ────────────────────────────────────────────────
+  // On a tablet the products stay on screen rather than living behind the
+  // "add product" sheet: the web POS works this way and a counter sale is
+  // mostly tapping a product you can already see. Same data, same add path
+  // (promo choice, then _setQty) — only the presentation differs.
+  Widget _catalogGrid() {
+    final filtered = _filteredProducts();
+    if (_inventorySyncing && _items.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (filtered.isEmpty) {
+      return EmptyStateView(
+        icon: _query.isEmpty ? Icons.inventory_2_outlined : Icons.search_off,
+        title: _query.isEmpty
+            ? 'ຍັງບໍ່ມີສິນຄ້າ'
+            : 'ບໍ່ພົບສິນຄ້າທີ່ກົງກັບ "${_query.trim()}"',
+        subtitle: _query.isEmpty
+            ? 'ດຶງ refresh ເພື່ອໂຫຼດໃໝ່'
+            : 'ລອງປ່ຽນຄຳຄົ້ນ ຫຼື ສະແກນ barcode',
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: () => _syncInventory(),
+      child: LayoutBuilder(
+        builder: (context, box) {
+          // ~230px a card: three across an 11" pane, more on a wider screen.
+          final columns = (box.maxWidth / 230).floor().clamp(2, 5);
+          return GridView.builder(
+            padding: const EdgeInsets.fromLTRB(
+              kSpace3,
+              kSpace3,
+              kSpace3,
+              kSpace5,
+            ),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              mainAxisSpacing: kSpace3,
+              crossAxisSpacing: kSpace3,
+              mainAxisExtent: 132,
+            ),
+            itemCount: filtered.length,
+            itemBuilder: (_, i) => _catalogCard(filtered[i]),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _catalogCard(InventoryItem p) {
+    final qty = _qtyByCode[p.code] ?? 0;
+    final stock = _itemStock(p);
+    final price = _unitPrice(p);
+    final out = stock <= 0;
+    final low = !out && stock <= 5;
+    final stockColor = out
+        ? AppColors.danger
+        : low
+        ? AppColors.warning
+        : AppColors.success;
+
+    return Material(
+      color: AppColors.cardBg,
+      borderRadius: BorderRadius.circular(kRadiusLg),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(kRadiusLg),
+        onTap: out ? null : () => _addFromCatalog(p, qty),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(
+            kSpace3,
+            kSpace3,
+            kSpace3,
+            kSpace2,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(kRadiusLg),
+            border: Border.all(
+              color: qty > 0 ? AppColors.primary : AppColors.border,
+              width: qty > 0 ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  p.nameLo,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.35,
+                    fontWeight: FontWeight.w800,
+                    color: out ? AppColors.textMuted : AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              Divider(height: kSpace3, color: AppColors.divider),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _moneyFmt.format(price),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.primaryDark,
+                      ),
+                    ),
+                  ),
+                  // In the cart the count is what matters; before that, what
+                  // is left on the shelf. Never both.
+                  if (qty > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(kRadiusSm),
+                      ),
+                      child: Text(
+                        '$qty',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                    )
+                  else
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: stockColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          out ? 'ໝົດ' : _moneyFmt.format(stock),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            color: stockColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Same sequence the picker sheet uses: settle any promo choice first, then
+  // add one. Kept in one place so the two entry points cannot drift.
+  Future<void> _addFromCatalog(InventoryItem p, int qty) async {
+    final ap = _applicablePromosForProduct(p.code);
+    if (ap.isNotEmpty && !_promoChoiceByCode.containsKey(p.code)) {
+      await _choosePromoForLine(p);
+      if (!mounted) return;
+    }
+    await _setQty(p, qty + 1);
+    if (mounted) setState(() {});
   }
 
   Widget _buildSearchRow({VoidCallback? refresh}) {
