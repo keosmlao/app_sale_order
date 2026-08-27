@@ -479,6 +479,11 @@ class OrderItem {
   final String? warehouseCode;
   final String? locationCode;
   final String? salespersonCode;
+  // The serial-tracked unit this line is taking, when the cashier picked
+  // one. Sent with the order so a warranty claim or a return can be tied
+  // back to the number on the box.
+  final String? serialNo;
+  final String? serialIsn;
 
   OrderItem({
     required this.id,
@@ -489,6 +494,8 @@ class OrderItem {
     this.warehouseCode,
     this.locationCode,
     this.salespersonCode,
+    this.serialNo,
+    this.serialIsn,
   });
 
   double get subtotal => unitPrice * quantity;

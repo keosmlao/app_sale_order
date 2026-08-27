@@ -1838,6 +1838,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               // Per-line override → backend prefers this over the cart-
               // level salespersonCode for that one line.
               salespersonCode: _salespersonByItemCode[entry.key]?.employeeCode,
+              // The unit chosen off the storefront shelf, if any.
+              serialNo: _serialByItemCode[entry.key]?.sn,
+              serialIsn: _serialByItemCode[entry.key]?.isn,
             ),
           )
           .toList();

@@ -258,6 +258,8 @@ class ApiClient {
         String? warehouseCode,
         String? locationCode,
         String? salespersonCode,
+        String? serialNo,
+        String? serialIsn,
       })
     >
     items,
@@ -294,6 +296,10 @@ class ApiClient {
                 if (i.salespersonCode != null &&
                     i.salespersonCode!.trim().isNotEmpty)
                   'salespersonCode': i.salespersonCode!.trim(),
+                if (i.serialNo != null && i.serialNo!.trim().isNotEmpty)
+                  'serialNo': i.serialNo!.trim(),
+                if (i.serialIsn != null && i.serialIsn!.trim().isNotEmpty)
+                  'serialIsn': i.serialIsn!.trim(),
               },
             )
             .toList(),
