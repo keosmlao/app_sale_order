@@ -2060,9 +2060,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   Widget _orderEntryBody() {
     final selected = _selectedItems;
     final c = _selectedCustomer;
-    final dlv = _selectedDelivery;
-    final hasNote = _note.trim().isNotEmpty;
-    final hasExtra = _appliedExtraDiscount > 0;
 
     // Guided, numbered order flow — each step shows a ✓ once satisfied so the
     // cashier always knows what's left before the bill can be created.
@@ -2083,27 +2080,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       trailing: selected.isEmpty ? null : '${selected.length} ລາຍການ',
       child: _itemsSectionBody(selected),
     );
-    final deliveryStep = PageSection(
-      step: 3,
-      complete: dlv != null,
-      icon: Icons.local_shipping_rounded,
-      accent: AppColors.primary,
-      label: 'ການຮັບສິນຄ້າ',
-      child: _deliveryPickerRow(),
-    );
-    final settingsStep = PageSection(
-      step: 4,
-      complete: hasExtra || hasNote,
-      icon: Icons.local_offer_rounded,
-      accent: AppColors.primary,
-      label: 'ສ່ວນຫຼຸດ ແລະ ໝາຍເຫດ',
-      child: _compactSettingsRow(),
-    );
-    // On a phone the five steps are one column, which is the whole screen.
-    // On an 11" tablet in landscape that column leaves two thirds of the
-    // glass empty and pushes the total below the fold, so the sale splits
-    // the way the web POS does: what you are building on the left, what it
-    // costs and how it ships on the right, both visible at once.
+    // The scrolling part of the screen is now just the two things being
+    // built — who is buying and what they are buying. How it ships, any
+    // discount, the note and the total are all in the footer: each is one
+    // line, all four are always in view, and none of them scroll away
+    // behind the cart as items are added.
     if (!isTablet(context)) {
       return ListView(
         key: const PageStorageKey('create-order-entry'),
@@ -2112,10 +2093,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           customerStep,
           const SizedBox(height: kSpace4),
           itemsStep,
-          const SizedBox(height: kSpace4),
-          deliveryStep,
-          const SizedBox(height: kSpace4),
-          settingsStep,
         ],
       );
     }
@@ -2176,10 +2153,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     kSpace3,
                     kSpace5,
                   ),
-                  // The web's order, top to bottom: who is buying, who is
-                  // selling, what is on the bill, what it comes to, how it
-                  // leaves the shop. The customer sits first because the
-                  // price of everything under it depends on the answer.
+                  // Who is buying, who is selling, what is on the bill.
+                  // The customer sits first because the price of everything
+                  // under it depends on the answer. What the bill comes to
+                  // and how it leaves the shop are in the pay bar below,
+                  // pinned, so a long cart cannot push them out of view.
                   children: [
                     _customerStepBody(),
                     const SizedBox(height: 6),
@@ -2201,20 +2179,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     const SizedBox(height: kSpace3),
                     _itemsSectionBody(selected),
                     const SizedBox(height: kSpace3),
-                    // Delivery, discount and note before the summary: each
-                    // of them changes the figure, so the figure reads last
-                    // — right above the pay bar that charges it.
-                    _railBlock(
-                      'ຈັດສົ່ງ · ສ່ວນຫຼຸດ · ໝາຍເຫດ',
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _deliveryPickerRow(),
-                          const SizedBox(height: 8),
-                          _compactSettingsRow(),
-                        ],
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -2264,36 +2228,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               ),
             ),
           if (action != null) ...[const SizedBox(width: 4), action],
-        ],
-      ),
-    );
-  }
-
-  // One labelled block in the checkout rail.
-  Widget _railBlock(String label, Widget child) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(kSpace3, kSpace2, kSpace3, kSpace3),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(kRadiusLg),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.2,
-                color: AppColors.textMuted,
-              ),
-            ),
-          ),
-          child,
         ],
       ),
     );
@@ -2775,14 +2709,21 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // The breakdown sits with the total it explains. It used to be a
-          // section of its own, directly above a footer printing the same
-          // figure — the bill amount written twice, one line apart.
-          //
+          // Everything that decides the bill, with the bill: how it ships,
+          // any discount, the note, then the breakdown, then the total.
+          // These were sections of their own above a footer that already
+          // printed the figure — so the amount appeared twice, one line
+          // apart, and shipping scrolled out of sight behind a long cart.
+          _deliveryPickerRow(),
+          const SizedBox(height: 8),
+          _compactSettingsRow(),
+          const SizedBox(height: kSpace3),
+          Divider(height: 1, color: AppColors.border),
+          const SizedBox(height: kSpace3),
           // Only lines that say something appear: a subtotal that differs
           // from the total, a discount, a rounding, points actually earned.
-          // With none of them this collapses to nothing and the footer is
-          // the plain total it always was.
+          // With none of them this collapses to nothing and the footer runs
+          // straight from the note row to the total.
           ...() {
             final rows = _summaryDetailRows();
             if (rows.isEmpty) return <Widget>[];
