@@ -121,6 +121,12 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     _revision.value++;
   }
 
+  // The warehouse the last line was taken from. A bill is usually picked
+  // from one place, so the next item leads with it — the counter should
+  // not re-answer the same question for every line — while every other
+  // warehouse stays one tap below.
+  String? _lastPickedWarehouseCode;
+
   // Which of the two portrait tabs is showing: 0 shop, 1 cart.
   int _portraitTab = 0;
 
@@ -1406,6 +1412,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       ),
     );
     if (picked == null || !mounted) return false;
+    _lastPickedWarehouseCode = picked.warehouse.code;
 
     await _maybePickSerial(item, picked.warehouse.code);
     if (!mounted) return false;
@@ -1668,7 +1675,18 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       _toast('ດຶງ stock ບໍ່ສຳເລັດ — ສະແດງສາງທັງໝົດ (backorder)');
     }
 
-    options.sort((a, b) => b.stock.compareTo(a.stock));
+    // The warehouse the rest of this bill came from leads, then the rest by
+    // stock. One with nothing on the shelf is not a suggestion, so it only
+    // leads when it can actually supply the line.
+    final last = _lastPickedWarehouseCode;
+    options.sort((a, b) {
+      if (last != null) {
+        final aLast = a.warehouse.code == last && a.stock.floor() >= 1;
+        final bLast = b.warehouse.code == last && b.stock.floor() >= 1;
+        if (aLast != bLast) return aLast ? -1 : 1;
+      }
+      return b.stock.compareTo(a.stock);
+    });
 
     final picked = await showModalBottomSheet<_WarehouseStockOption>(
       context: context,
@@ -1678,10 +1696,15 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) =>
-          _WarehouseStockPickerSheet(item: item, options: options, fmt: _fmt),
+      builder: (_) => _WarehouseStockPickerSheet(
+        item: item,
+        options: options,
+        fmt: _fmt,
+        suggestedWarehouseCode: _lastPickedWarehouseCode,
+      ),
     );
     if (picked == null) return null;
+    _lastPickedWarehouseCode = picked.warehouse.code;
     return _PickedWarehouseStock(
       warehouse: picked.warehouse,
       location: picked.location,
@@ -6473,6 +6496,7 @@ class _WarehouseStockPickerSheet extends StatelessWidget {
     required this.fmt,
     this.headline,
     this.wanted,
+    this.suggestedWarehouseCode,
   });
 
   final InventoryItem item;
@@ -6485,6 +6509,8 @@ class _WarehouseStockPickerSheet extends StatelessWidget {
   // cover it are marked; the rest say what they actually hold, so a
   // warehouse that solves the problem is not read as one that does not.
   final int? wanted;
+  // Where the rest of this bill is being taken from, if anywhere.
+  final String? suggestedWarehouseCode;
 
   @override
   Widget build(BuildContext context) {
@@ -6550,6 +6576,10 @@ class _WarehouseStockPickerSheet extends StatelessWidget {
                       ? fmt.format(opt.stock.toInt())
                       : opt.stock.toStringAsFixed(2);
                   final covers = wanted != null && opt.stock.floor() >= wanted!;
+                  final suggested =
+                      suggestedWarehouseCode != null &&
+                      opt.warehouse.code == suggestedWarehouseCode &&
+                      opt.stock.floor() >= 1;
                   return Material(
                     color: AppColors.cardBg,
                     borderRadius: BorderRadius.circular(kRadiusMd),
@@ -6616,6 +6646,31 @@ class _WarehouseStockPickerSheet extends StatelessWidget {
                                       fontSize: 14,
                                     ),
                                   ),
+                                  if (suggested) ...[
+                                    const SizedBox(height: 3),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 1,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primary.withValues(
+                                          alpha: 0.12,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          kRadiusPill,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'ສາງດຽວກັບລາຍການກ່ອນ',
+                                        style: TextStyle(
+                                          color: AppColors.primary,
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                   if (opt.warehouse.name.trim().isNotEmpty &&
                                       opt.warehouse.name != opt.warehouse.code)
                                     Padding(
