@@ -85,6 +85,15 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   // order route use, and /api/orders re-prices at submit regardless. These
   // maps are the preview it hands back.
   List<Promotion> _activePromos = const [];
+  // The tablet catalogue grid, fed by /api/products — the web POS's own
+  // endpoint, so the two grids show the same shelf. Kept apart from
+  // _allItems/_serverResults, which stay as they are for the phone picker,
+  // promotion matching, and set lookups.
+  List<InventoryItem> _catalog = const [];
+  bool _catalogBusy = true;
+  Timer? _catalogDebounce;
+  int _catalogSeq = 0;
+
   // Debounce + generation guard for the pricing request. The generation
   // stops a slow reply to an old cart from overwriting a newer one.
   Timer? _pricingDebounce;
@@ -123,6 +132,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _bootstrap();
+        // The grid is the work surface, so it loads on open rather than
+        // waiting for the first keystroke.
+        _reloadCatalog();
       }
     });
   }
@@ -147,6 +159,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     _searchCtl.dispose();
     _searchDebounce?.cancel();
     _pricingDebounce?.cancel();
+    _catalogDebounce?.cancel();
     super.dispose();
   }
 
@@ -2075,14 +2088,19 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       );
     }
 
-    // Catalogue on the left, the sale on the right — the shape the web POS
-    // settled on. The products are the work surface, so they stay visible
-    // instead of living behind the "add product" sheet; everything about
-    // the bill itself collects in the rail.
+    // Three columns, the shape the web POS uses above 1180px: what you are
+    // picking from, what is on the bill, and what it costs. Each scrolls on
+    // its own, so adding the tenth item never pushes the total out of view.
+    //
+    // The numbered 1-2-3 wizard is deliberately dropped here, exactly as the
+    // web drops it at this width. Its job is to tell the cashier what step
+    // is next on a screen that can only show one step at a time; when all
+    // three are on the glass at once it is just chrome eating the height.
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
+          flex: 5,
           child: Column(
             children: [
               _buildSearchRow(refresh: () => setState(() {})),
@@ -2091,30 +2109,137 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           ),
         ),
         Container(width: 1, color: AppColors.border),
-        SizedBox(
-          width: 400,
-          child: ListView(
-            key: const PageStorageKey('create-order-entry-right'),
-            padding: const EdgeInsets.fromLTRB(
-              kSpace3,
-              kSpace4,
-              kSpace4,
-              kSpace5,
-            ),
+        Expanded(
+          flex: 5,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              customerStep,
-              const SizedBox(height: kSpace4),
-              itemsStep,
-              const SizedBox(height: kSpace4),
-              summaryStep,
-              const SizedBox(height: kSpace4),
-              deliveryStep,
-              const SizedBox(height: kSpace4),
-              settingsStep,
+              _paneHeader(
+                icon: Icons.shopping_cart_rounded,
+                label: 'ກະຕ່າ',
+                trailing: selected.isEmpty ? null : '${selected.length} ລາຍການ',
+              ),
+              Expanded(
+                child: ListView(
+                  key: const PageStorageKey('create-order-cart'),
+                  padding: const EdgeInsets.fromLTRB(
+                    kSpace3,
+                    kSpace3,
+                    kSpace3,
+                    kSpace5,
+                  ),
+                  children: [_itemsSectionBody(selected)],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(width: 1, color: AppColors.border),
+        SizedBox(
+          width: 340,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _paneHeader(
+                icon: Icons.receipt_long_rounded,
+                label: 'ບິນ',
+                trailing: ready ? 'ພ້ອມ' : null,
+              ),
+              Expanded(
+                child: ListView(
+                  key: const PageStorageKey('create-order-checkout'),
+                  padding: const EdgeInsets.fromLTRB(
+                    kSpace3,
+                    kSpace3,
+                    kSpace3,
+                    kSpace5,
+                  ),
+                  children: [
+                    _railBlock('ລູກຄ້າ', _customerStepBody()),
+                    const SizedBox(height: kSpace3),
+                    _railBlock('ການຮັບສິນຄ້າ', _deliveryPickerRow()),
+                    const SizedBox(height: kSpace3),
+                    _railBlock('ສ່ວນຫຼຸດ ແລະ ໝາຍເຫດ', _compactSettingsRow()),
+                    const SizedBox(height: kSpace3),
+                    _railBlock('ສະຫຼຸບ', _summarySection()),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  // Column heading — the flat bar the web POS puts above each of its three
+  // columns. Not a PageSection: no step number, no completion tick.
+  Widget _paneHeader({
+    required IconData icon,
+    required String label,
+    String? trailing,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(kSpace3, 10, kSpace3, 10),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+          if (trailing != null)
+            Text(
+              trailing,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textMuted,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // One labelled block in the checkout rail.
+  Widget _railBlock(String label, Widget child) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(kSpace3, kSpace2, kSpace3, kSpace3),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(kRadiusLg),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.2,
+                color: AppColors.textMuted,
+              ),
+            ),
+          ),
+          child,
+        ],
+      ),
     );
   }
 
@@ -2831,16 +2956,53 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   // "add product" sheet: the web POS works this way and a counter sale is
   // mostly tapping a product you can already see. Same data, same add path
   // (promo choice, then _setQty) — only the presentation differs.
+  // Reload the grid for the current query. Debounced the way the web POS
+  // debounces its own catalogue effect: a burst of keystrokes is one query,
+  // and clearing the box reloads at once rather than after a pause.
+  void _reloadCatalog() {
+    _catalogDebounce?.cancel();
+    final q = _query.trim();
+    void run() => unawaited(_fetchCatalog(q));
+    if (q.isEmpty) {
+      run();
+    } else {
+      _catalogDebounce = Timer(const Duration(milliseconds: 220), run);
+    }
+  }
+
+  Future<void> _fetchCatalog(String q) async {
+    final seq = ++_catalogSeq;
+    if (mounted) setState(() => _catalogBusy = true);
+    try {
+      final rows = await AppScope.of(context).api.fetchPosCatalog(
+        warehouse: kStorefrontWarehouse,
+        q: q,
+      );
+      if (!mounted || seq != _catalogSeq) return;
+      setState(() {
+        _catalog = rows;
+        _catalogBusy = false;
+      });
+    } catch (e) {
+      debugPrint('[POS] catalogue load failed: $e');
+      if (!mounted || seq != _catalogSeq) return;
+      setState(() {
+        _catalog = const [];
+        _catalogBusy = false;
+      });
+    }
+  }
+
   Widget _catalogGrid() {
-    final filtered = _filteredProducts();
-    if (_inventorySyncing && _items.isEmpty) {
+    final filtered = _catalog;
+    if (_catalogBusy && filtered.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (filtered.isEmpty) {
       return EmptyStateView(
         icon: _query.isEmpty ? Icons.inventory_2_outlined : Icons.search_off,
         title: _query.isEmpty
-            ? 'ຍັງບໍ່ມີສິນຄ້າ'
+            ? 'ຍັງບໍ່ມີສິນຄ້າໃນສາງໜ້າຮ້ານ'
             : 'ບໍ່ພົບສິນຄ້າທີ່ກົງກັບ "${_query.trim()}"',
         subtitle: _query.isEmpty
             ? 'ດຶງ refresh ເພື່ອໂຫຼດໃໝ່'
@@ -2848,11 +3010,14 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       );
     }
     return RefreshIndicator(
-      onRefresh: () => _syncInventory(),
+      onRefresh: () => _fetchCatalog(_query.trim()),
       child: LayoutBuilder(
         builder: (context, box) {
-          // ~230px a card: three across an 11" pane, more on a wider screen.
-          final columns = (box.maxWidth / 230).floor().clamp(2, 5);
+          // 152px minimum a tile plus a 12px gap — the web POS grid's own
+          // sizing (repeat(auto-fill, minmax(152px, 1fr))). The app was
+          // laying out 230px cards, which is why the same pane that fits
+          // three across on the web only fitted two here.
+          final columns = (box.maxWidth / 164).floor().clamp(2, 6);
           return GridView.builder(
             padding: const EdgeInsets.fromLTRB(
               kSpace3,
@@ -2862,9 +3027,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             ),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
-              mainAxisSpacing: kSpace3,
-              crossAxisSpacing: kSpace3,
-              mainAxisExtent: 132,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              mainAxisExtent: 178,
             ),
             itemCount: filtered.length,
             itemBuilder: (_, i) => _catalogCard(filtered[i]),
@@ -2876,10 +3041,17 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   Widget _catalogCard(InventoryItem p) {
     final qty = _qtyByCode[p.code] ?? 0;
-    final stock = _itemStock(p);
+    // The catalogue's own stock figure, straight from the feed — the same
+    // number the web tile shows.
+    //
+    // Not _itemStock(): that answers "how many are on the shelf this cart
+    // line is pinned to", and nothing is pinned until the item has been
+    // added. It returned -1 for every tile in the grid, which read as
+    // out-of-stock and disabled the whole catalogue.
+    final stock = p.salesBalance;
     final price = _unitPrice(p);
-    final out = stock <= 0;
-    final low = !out && stock <= 5;
+    final out = !p.hasSet && stock <= 0;
+    final low = !out && stock > 0 && stock <= 5;
     final stockColor = out
         ? AppColors.danger
         : low
@@ -2972,7 +3144,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                         ),
                         const SizedBox(width: 5),
                         Text(
-                          out ? 'ໝົດ' : _moneyFmt.format(stock),
+                          p.hasSet
+                              ? 'ຊຸດ'
+                              : out
+                              ? 'ໝົດ'
+                              : _moneyFmt.format(stock),
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w900,
@@ -2993,6 +3169,34 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   // Same sequence the picker sheet uses: settle any promo choice first, then
   // add one. Kept in one place so the two entry points cannot drift.
   Future<void> _addFromCatalog(InventoryItem p, int qty) async {
+    // Same refusal the web POS makes. An item with no sale price on file
+    // would go onto the bill at zero, and the counter has no way to spot
+    // that before the customer has paid — so it does not go on at all
+    // until someone sets the price in the system.
+    if (!p.hasSet && p.salePriceKip <= 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.danger,
+            content: Text(
+              '${p.nameLo} (${p.code}) ຍັງບໍ່ມີລາຄາຂາຍ — '
+              'ຂາຍບໍ່ໄດ້ ຈົນກວ່າຈະຕັ້ງລາຄາໃນລະບົບ',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    // The grid is fed by /api/products while the cart resolves items out of
+    // _items/_allItems (/api/inventory). A tile the browse list has never
+    // seen would be added and then drop straight back out of _selectedItems,
+    // so register it before anything reads it back.
+    if (_itemByCode(p.code) == null) {
+      setState(() {
+        _allItems = [..._allItems, p];
+        _items = [..._items, p];
+      });
+    }
     final ap = _applicablePromosForProduct(p.code);
     if (ap.isNotEmpty && !_promoChoiceByCode.containsKey(p.code)) {
       await _choosePromoForLine(p);
@@ -3203,6 +3407,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       if (!mounted) return;
       setState(() => _query = value);
       refresh?.call();
+      _reloadCatalog();
       unawaited(_runServerSearch(value.trim(), refresh: refresh));
     });
   }

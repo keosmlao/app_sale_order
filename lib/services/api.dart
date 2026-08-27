@@ -720,6 +720,33 @@ class ApiClient {
         .toList();
   }
 
+  // The POS catalogue, straight off /api/products — the same call the web
+  // POS makes, with the same warehouse pin and the same page size, so the
+  // tablet grid shows the storefront's shelf rather than the whole company
+  // inventory filtered on the device.
+  //
+  // The server decides what belongs here: stock in that warehouse, a sale
+  // price on file, and none of the categories the counter does not sell.
+  // An exact barcode or serial in `q` resolves too, the way a scan does.
+  Future<List<InventoryItem>> fetchPosCatalog({
+    required String warehouse,
+    String q = '',
+    int limit = 60,
+  }) async {
+    final res = await _get(
+      _uri('/api/products', {
+        'warehouses': warehouse,
+        'q': q.trim(),
+        'limit': '$limit',
+      }),
+      headers: _headers(),
+    );
+    final data = _decode(res) as List<dynamic>;
+    return data
+        .map((e) => InventoryItem.fromPosCatalog(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<Promotion>> fetchActivePromotions() async {
     final uri = _uri('/api/promotions/active');
     final hdrs = _headers();

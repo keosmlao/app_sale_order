@@ -613,6 +613,31 @@ class InventoryItem {
     salePriceKip: _toDouble(j['salePriceKip'] ?? j['price']),
   );
 
+  // The POS catalogue feed, /api/products — the same endpoint and the same
+  // rows the web POS grid is built from. Its field names differ from
+  // /api/inventory's (name/price/stock rather than nameLo/salePriceKip/
+  // companyBalance), and it has already applied the storefront rules:
+  // warehouse 1101 only, in stock, priced, minus the categories that are
+  // not sold at the counter.
+  factory InventoryItem.fromPosCatalog(Map<String, dynamic> j) {
+    final stock = _toDouble(j['stock']);
+    return InventoryItem(
+      code: (j['code'] ?? '').toString(),
+      nameLo: (j['name'] ?? '').toString(),
+      unitName: j['unitName'] as String?,
+      brand: j['brand'] as String?,
+      category: j['category'] as String?,
+      categoryName: j['categoryName'] as String?,
+      groupMain: j['groupMain'] as String?,
+      groupMainName: j['groupMainName'] as String?,
+      hasSet: j['hasSet'] == true,
+      companyBalance: stock,
+      salesBalance: stock,
+      salesMinimumStock: _toDouble(j['minimumStock']),
+      salePriceKip: _toDouble(j['price']),
+    );
+  }
+
   Map<String, dynamic> toJson() => {
     'code': code,
     'nameLo': nameLo,
