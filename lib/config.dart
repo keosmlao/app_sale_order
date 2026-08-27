@@ -66,3 +66,8 @@ class ConfigService {
     return v;
   }
 }
+
+/// The storefront warehouse — what the counter sells out of. Serial-tracked
+/// units are chosen by ISN here; other warehouses are picked by shelf.
+/// Matches DEFAULT_WAREHOUSE_CODE in the web POS.
+const String kStorefrontWarehouse = '1101';

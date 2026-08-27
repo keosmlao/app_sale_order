@@ -1680,3 +1680,31 @@ class MemberSummary {
         : null,
   );
 }
+
+/// One serial-tracked unit standing in a warehouse. Televisions and air
+/// conditioners are sold by the individual unit, so the bill has to say
+/// which one left the shelf.
+class SerialUnit {
+  const SerialUnit({
+    required this.sn,
+    required this.isn,
+    required this.location,
+    required this.rack,
+  });
+
+  final String sn;
+  final String? isn;
+  final String? location;
+  final String? rack;
+
+  /// What the storefront's paperwork calls it: ISN when there is one, the
+  /// serial otherwise.
+  String get label => (isn != null && isn!.isNotEmpty) ? isn! : sn;
+
+  factory SerialUnit.fromJson(Map<String, dynamic> j) => SerialUnit(
+    sn: (j['sn'] as String?)?.trim() ?? '',
+    isn: (j['isn'] as String?)?.trim(),
+    location: (j['location'] as String?)?.trim(),
+    rack: (j['rack'] as String?)?.trim(),
+  );
+}

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../app_scope.dart';
+import '../config.dart';
 import '../app_theme.dart';
 import '../models/models.dart';
 import '../services/api.dart';
@@ -34,6 +35,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   final _fmt = NumberFormat('#,###', 'en_US');
   final _moneyFmt = NumberFormat('#,###.##', 'en_US');
   final _searchCtl = TextEditingController();
+  // The serial-tracked unit chosen for a line, keyed by item code. Only the
+  // storefront asks: elsewhere the stock is picked from a shelf, not by unit.
+  final Map<String, SerialUnit> _serialByItemCode = {};
 
   List<InventoryItem> _items = const [];
   // Small server-loaded product set. The app no longer caches/preloads the
@@ -1116,6 +1120,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     if (qty <= 0) {
       setState(() {
         _qtyByCode.remove(item.code);
+        _serialByItemCode.remove(item.code);
         _warehouseByItemCode.remove(item.code);
         _locationByItemCode.remove(item.code);
         _approvedPriceByCode.remove(item.code);
@@ -1185,6 +1190,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       if (isSet && picked.stock.floor() < 1) {
         _toast('ສ້າງຊຸດບໍ່ໄດ້ໃນສາງນີ້ — stock ສ່ວນປະກອບບໍ່ພໍ');
         return false;
+      }
+      // Warehouse settled — for the storefront, which unit?
+      if (!isSet) {
+        await _maybePickSerial(item, picked.warehouse.code);
+        if (!mounted) return false;
       }
       setState(() {
         _selectedDelivery ??= _defaultDeliveryForWarehouse(picked.warehouse);
@@ -1277,6 +1287,155 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   // Fetches stock for a single item across all warehouses, then lets the user
   // choose the source warehouse from that item's cart line.
+  // Storefront stock is sold unit by unit — a television has a serial on the
+  // back and the paperwork follows that number, not just the item code. So
+  // once the storefront is chosen, ask which unit is going out. Anywhere
+  // else the shelf is the answer and there is nothing to choose.
+  Future<void> _maybePickSerial(InventoryItem item, String warehouseCode) async {
+    if (warehouseCode != kStorefrontWarehouse) return;
+    List<SerialUnit> units;
+    try {
+      units = await AppScope.of(
+        context,
+      ).api.fetchSerials(code: item.code, warehouse: warehouseCode);
+    } catch (_) {
+      return; // not knowing the serial must not stop the sale
+    }
+    if (!mounted || units.isEmpty) return;
+
+    final picked = await showModalBottomSheet<SerialUnit>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.cardBg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(kRadiusXl)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                kSpace4,
+                kSpace4,
+                kSpace4,
+                kSpace2,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'ເລືອກເຄື່ອງ (ISN)',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${item.nameLo} · ${units.length} ໜ່ວຍ',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(
+                  kSpace3,
+                  0,
+                  kSpace3,
+                  kSpace4,
+                ),
+                itemCount: units.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 6),
+                itemBuilder: (_, i) {
+                  final u = units[i];
+                  final where = [
+                    u.location,
+                    u.rack,
+                  ].where((e) => e != null && e.isNotEmpty).join(' · ');
+                  return Material(
+                    color: AppColors.bg,
+                    borderRadius: BorderRadius.circular(kRadiusMd),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(kRadiusMd),
+                      onTap: () => Navigator.of(ctx).pop(u),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: kSpace3,
+                          vertical: kSpace3,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.qr_code_2_rounded,
+                              size: 18,
+                              color: AppColors.primary,
+                            ),
+                            const SizedBox(width: kSpace2),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    u.label,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  if (where.isNotEmpty)
+                                    Text(
+                                      where,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.textMuted,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              color: AppColors.textSoft,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (picked != null && mounted) {
+      setState(() => _serialByItemCode[item.code] = picked);
+    }
+  }
+
   Future<_PickedWarehouseStock?> _promptWarehouseForItem(
     InventoryItem item,
   ) async {
@@ -2935,6 +3094,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           stock: stock,
           warehouse: _warehouseByItemCode[p.code],
           location: _locationByItemCode[p.code],
+          serial: _serialByItemCode[p.code],
           subtotal: gross,
           discountPct: _discountPct,
           discountAmount: discountAmount,
@@ -3550,6 +3710,7 @@ class _SelectedRow extends StatelessWidget {
     required this.qty,
     required this.stock,
     required this.warehouse,
+    this.serial,
     required this.location,
     required this.subtotal,
     required this.discountPct,
@@ -3578,6 +3739,7 @@ class _SelectedRow extends StatelessWidget {
   final InventoryItem item;
   final int qty;
   final double stock;
+  final SerialUnit? serial;
   final Warehouse? warehouse;
   final StockLocation? location;
   final double subtotal;
@@ -3858,6 +4020,33 @@ class _SelectedRow extends StatelessWidget {
               ],
             ),
           ),
+          if (serial != null) ...[
+            const SizedBox(height: 6),
+            // The unit that is leaving the shelf. Storefront paperwork goes
+            // by ISN, so that is what is shown when there is one.
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 3,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary50,
+                  borderRadius: BorderRadius.circular(kRadiusSm),
+                  border: Border.all(color: AppColors.primary100),
+                ),
+                child: Text(
+                  'ISN ${serial!.label}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primaryDark,
+                  ),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 6),
           Row(
             children: [

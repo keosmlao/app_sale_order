@@ -746,6 +746,25 @@ class ApiClient {
         .toList();
   }
 
+  // The serial-tracked units of one item still standing in one warehouse.
+  // Empty list is the normal answer for anything not tracked by serial.
+  Future<List<SerialUnit>> fetchSerials({
+    required String code,
+    required String warehouse,
+  }) async {
+    final res = await _get(
+      _uri('/api/inventory/serials', {
+        'code': code,
+        'warehouse': warehouse,
+      }),
+      headers: _headers(),
+    );
+    final data = _decode(res) as Map<String, dynamic>;
+    return ((data['items'] as List<dynamic>?) ?? const [])
+        .map((e) => SerialUnit.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<InventoryItem>> searchInventory(
     String q, {
     int limit = 10,
