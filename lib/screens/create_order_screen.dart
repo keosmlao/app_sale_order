@@ -489,20 +489,28 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   // AppBar button → opens the active-promotions list. Carries a small count
   // badge so the cashier sees at a glance how many promos are live.
-  Widget _buildPromoAppBarButton() {
+  // `compact` draws it for a pane header rather than an app bar: on the
+  // shop-floor tint instead of white, and without the app bar's padding.
+  Widget _buildPromoAppBarButton({bool compact = false}) {
     final count = _activeNowPromos.length;
+    final tint = compact ? AppColors.primary : Colors.white;
     return Padding(
-      padding: const EdgeInsets.only(right: kSpace2),
+      padding: EdgeInsets.only(right: compact ? 0 : kSpace2),
       child: IconButton(
         tooltip: 'ໂປຣໂມຊັ່ນ',
         onPressed: _openPromotionList,
+        visualDensity: compact ? VisualDensity.compact : null,
+        constraints: compact
+            ? const BoxConstraints(minWidth: 32, minHeight: 32)
+            : null,
+        padding: compact ? EdgeInsets.zero : null,
         icon: Stack(
           clipBehavior: Clip.none,
           children: [
-            const Icon(
+            Icon(
               Icons.local_offer_rounded,
-              size: 22,
-              color: Colors.white,
+              size: compact ? 18 : 22,
+              color: tint,
             ),
             if (count > 0)
               Positioned(
@@ -517,7 +525,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                   decoration: BoxDecoration(
                     color: AppColors.gold,
                     borderRadius: BorderRadius.circular(kRadiusPill),
-                    border: Border.all(color: AppColors.primary, width: 1.2),
+                    border: Border.all(
+                      color: compact ? AppColors.cardBg : AppColors.primary,
+                      width: 1.2,
+                    ),
                   ),
                   child: Text(
                     '$count',
@@ -1968,7 +1979,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     final isEdit = widget.editOrder != null;
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(
+      appBar: widget.embedded ? null : AppBar(
         backgroundColor: AppColors.primary,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -2103,118 +2114,111 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       );
     }
 
-    // Catalogue on the left, the sale on the right — the web POS's shape.
+    // Catalogue on the left, the sale on the right. Two panes, not three —
+    // the web tried a separate cart column and dropped it, because between
+    // sales (which is most of the time) it sat empty while the catalogue
+    // went short. Cart and checkout share one rail; the catalogue takes the
+    // width that frees up and runs four tiles across.
     //
-    // The web splits the sale into its own two columns (cart, then bill)
-    // only at 1180px and up; below that both live in one rail. Same rule
-    // here, off the same number, so the tablet and the browser on that
-    // tablet do not disagree about where the total is.
-    //
-    // The numbered 1-2-3 wizard is dropped at these widths, exactly as the
-    // web drops it. It exists to say what step is next on a screen that can
-    // show one step at a time; with everything on the glass at once it is
-    // chrome eating the height.
-    final wide = MediaQuery.of(context).size.width >= 1180;
-
-    final billBlocks = <Widget>[
-      _railBlock('ລູກຄ້າ', _customerStepBody()),
-      const SizedBox(height: kSpace3),
-      _railBlock('ການຮັບສິນຄ້າ', _deliveryPickerRow()),
-      const SizedBox(height: kSpace3),
-      _railBlock('ສ່ວນຫຼຸດ ແລະ ໝາຍເຫດ', _compactSettingsRow()),
-      const SizedBox(height: kSpace3),
-      _railBlock('ສະຫຼຸບ', _summarySection()),
-    ];
-
-    Widget pane({
-      required IconData icon,
-      required String label,
-      String? trailing,
-      required String storageKey,
-      required List<Widget> children,
-    }) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _paneHeader(icon: icon, label: label, trailing: trailing),
-          Expanded(
-            child: ListView(
-              key: PageStorageKey(storageKey),
-              padding: const EdgeInsets.fromLTRB(
-                kSpace3,
-                kSpace3,
-                kSpace3,
-                kSpace5,
-              ),
-              children: children,
-            ),
-          ),
-        ],
-      );
-    }
-
-    final divider = Container(width: 1, color: AppColors.border);
+    // The numbered 1-2-3 wizard is dropped at this width, as the web drops
+    // it. It exists to say what step is next on a screen that shows one step
+    // at a time; with everything on the glass it is chrome eating height.
+    final totalQty = _qtyByCode.values.fold<int>(0, (a, b) => a + b);
+    final railWidth = MediaQuery.of(context).size.width * 0.4;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          flex: wide ? 5 : 6,
           child: Column(
             children: [
+              // The web labels the catalogue column and counts it. When the
+              // POS is the tab there is no app bar overhead to carry the
+              // promo button, so it rides here.
+              if (widget.embedded)
+                _paneHeader(
+                  icon: Icons.inventory_2_rounded,
+                  label: 'ສິນຄ້າ',
+                  trailing: _catalogBusy
+                      ? '…'
+                      : '${_catalog.length} ລາຍການ',
+                  action: _buildPromoAppBarButton(compact: true),
+                ),
               _buildSearchRow(refresh: () => setState(() {})),
               Expanded(child: _catalogGrid()),
             ],
           ),
         ),
-        divider,
-        if (wide) ...[
-          Expanded(
-            flex: 5,
-            child: pane(
-              icon: Icons.shopping_cart_rounded,
-              label: 'ກະຕ່າ',
-              trailing: selected.isEmpty ? null : '${selected.length} ລາຍການ',
-              storageKey: 'create-order-cart',
-              children: [_itemsSectionBody(selected)],
-            ),
+        Container(width: 1, color: AppColors.border),
+        SizedBox(
+          // minmax(430px, 500px), the rail's own sizing on the web.
+          width: railWidth.clamp(430.0, 500.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _paneHeader(
+                icon: Icons.shopping_cart_rounded,
+                label: 'ກະຕ່າຂາຍ',
+                trailing: selected.isEmpty
+                    ? null
+                    : '${selected.length} ລາຍການ · $totalQty ອັນ',
+              ),
+              Expanded(
+                child: ListView(
+                  key: const PageStorageKey('create-order-sale'),
+                  padding: const EdgeInsets.fromLTRB(
+                    kSpace3,
+                    kSpace3,
+                    kSpace3,
+                    kSpace5,
+                  ),
+                  // The web's order, top to bottom: who is buying, who is
+                  // selling, what is on the bill, what it comes to, how it
+                  // leaves the shop. The customer sits first because the
+                  // price of everything under it depends on the answer.
+                  children: [
+                    _customerStepBody(),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'ຜູ້ຂາຍ: ${_selectedSalesperson?.displayName ?? '—'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: kSpace3),
+                    _itemsSectionBody(selected),
+                    const SizedBox(height: kSpace3),
+                    _railBlock('ສະຫຼຸບ', _summarySection()),
+                    const SizedBox(height: kSpace3),
+                    _railBlock('ການຮັບສິນຄ້າ', _deliveryPickerRow()),
+                    const SizedBox(height: kSpace3),
+                    _railBlock('ສ່ວນຫຼຸດ ແລະ ໝາຍເຫດ', _compactSettingsRow()),
+                  ],
+                ),
+              ),
+            ],
           ),
-          divider,
-          SizedBox(
-            width: 340,
-            child: pane(
-              icon: Icons.receipt_long_rounded,
-              label: 'ບິນ',
-              trailing: ready ? 'ພ້ອມ' : null,
-              storageKey: 'create-order-checkout',
-              children: billBlocks,
-            ),
-          ),
-        ] else
-          Expanded(
-            flex: 5,
-            child: pane(
-              icon: Icons.receipt_long_rounded,
-              label: 'ຂາຍ',
-              trailing: selected.isEmpty ? null : '${selected.length} ລາຍການ',
-              storageKey: 'create-order-sale',
-              children: [
-                _itemsSectionBody(selected),
-                const SizedBox(height: kSpace3),
-                ...billBlocks,
-              ],
-            ),
-          ),
+        ),
       ],
     );
   }
 
-  // Column heading — the flat bar the web POS puts above each of its three
+  // Column heading — the flat bar the web POS puts above each of its two
   // columns. Not a PageSection: no step number, no completion tick.
   Widget _paneHeader({
     required IconData icon,
     required String label,
     String? trailing,
+    Widget? action,
   }) {
     return Container(
       padding: const EdgeInsets.fromLTRB(kSpace3, 10, kSpace3, 10),
@@ -2245,6 +2249,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 color: AppColors.textMuted,
               ),
             ),
+          if (action != null) ...[const SizedBox(width: 4), action],
         ],
       ),
     );
@@ -3050,11 +3055,13 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       onRefresh: () => _fetchCatalog(_query.trim()),
       child: LayoutBuilder(
         builder: (context, box) {
-          // 152px minimum a tile plus a 12px gap — the web POS grid's own
-          // sizing (repeat(auto-fill, minmax(152px, 1fr))). The app was
-          // laying out 230px cards, which is why the same pane that fits
-          // three across on the web only fitted two here.
-          final columns = (box.maxWidth / 164).floor().clamp(2, 6);
+          // Four across, pinned, exactly as the web pins it once the sale
+          // collapsed into one rail and the catalogue took the freed width.
+          // Below tablet width the tiles size themselves off a 152px
+          // minimum, the grid's auto-fill default there.
+          final columns = isTablet(context)
+              ? 4
+              : (box.maxWidth / 164).floor().clamp(2, 4);
           return GridView.builder(
             padding: const EdgeInsets.fromLTRB(
               kSpace3,
