@@ -2243,11 +2243,25 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         final stock =
             _stockByLineKey[_lineStockKey(entry.key, wh.code, locationCode)] ??
             0;
-        if (stock < entry.value) {
+        // Only what this warehouse is being asked for. The line's other
+        // warehouses supply the rest, and counting the whole quantity
+        // against one shelf called backorder on stock that was standing
+        // ready somewhere else.
+        final needHere = entry.value - _extraQtyFor(entry.key);
+        if (stock < needHere) {
           backorders.add((
             name: item?.nameLo ?? entry.key,
             have: stock.floor(),
-            short: entry.value - stock.floor(),
+            short: needHere - stock.floor(),
+          ));
+        }
+        // Each other warehouse answers for its own share.
+        for (final extra in _extraAllocByCode[entry.key] ?? const []) {
+          if (extra.stock.floor() >= extra.qty) continue;
+          backorders.add((
+            name: item?.nameLo ?? entry.key,
+            have: extra.stock.floor(),
+            short: extra.qty - extra.stock.floor(),
           ));
         }
       }
