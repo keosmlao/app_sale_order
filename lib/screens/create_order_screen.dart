@@ -1353,11 +1353,14 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     return true;
   }
 
-  // The picked warehouse is short. If another one holds the whole
-  // quantity, offer the move; returns true when the cashier took it.
+  // The picked warehouse is short, so hand over the warehouse list and let
+  // the cashier choose. Returns true when they moved the line.
   //
-  // Only warehouses that can cover the full quantity are offered — a list
-  // that is also short is a list of the same problem somewhere else.
+  // Every other warehouse holding any stock is offered, not only the ones
+  // that cover the whole quantity: the counter knows things the stock
+  // figures do not — what is arriving, what the customer will accept, what
+  // can be split — and a toast saying "this warehouse has 1" answers none
+  // of that. Whatever they pick, the line is capped at what it holds.
   Future<bool> _offerWarehouseWithStock(
     InventoryItem item,
     int wanted,
@@ -1373,7 +1376,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     }
     if (!mounted) return false;
     final elsewhere = options
-        .where((o) => o.warehouse.code != current && o.stock.floor() >= wanted)
+        .where((o) => o.warehouse.code != current && o.stock.floor() >= 1)
         .toList();
     if (elsewhere.isEmpty) return false;
     elsewhere.sort((a, b) => b.stock.compareTo(a.stock));
@@ -1390,7 +1393,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         item: item,
         options: elsewhere,
         fmt: _fmt,
-        headline: 'ສາງນີ້ມີ $here — ເອົາ $wanted ຈາກສາງອື່ນບໍ?',
+        headline: 'ສາງນີ້ມີ $here — ຕ້ອງການ $wanted, ເລືອກສາງອື່ນ',
       ),
     );
     if (picked == null || !mounted) return false;
