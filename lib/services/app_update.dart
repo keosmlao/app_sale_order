@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_theme.dart';
+import 'app_installer.dart';
 
 /// What the server says the current Android build is.
 class AppRelease {
@@ -106,7 +107,12 @@ class AppUpdateService {
 
 /// Full-screen, no way past it: the build cannot be trusted against this
 /// server, so there is nothing useful behind the dialog to go back to.
-class ForcedUpdateScreen extends StatelessWidget {
+///
+/// The button downloads the APK here, with a progress bar, and hands the
+/// finished file to the system installer — the same flow app_tms uses.
+/// Opening the download in a browser is where the update used to stop: the
+/// file lands in Downloads and someone has to go find it and tap it.
+class ForcedUpdateScreen extends StatefulWidget {
   const ForcedUpdateScreen({
     super.key,
     required this.release,
@@ -117,10 +123,80 @@ class ForcedUpdateScreen extends StatelessWidget {
   final String baseUrl;
 
   @override
+  State<ForcedUpdateScreen> createState() => _ForcedUpdateScreenState();
+}
+
+enum _UpdateStage { idle, downloading, installing }
+
+class _ForcedUpdateScreenState extends State<ForcedUpdateScreen> {
+  _UpdateStage _stage = _UpdateStage.idle;
+  double _progress = 0;
+  int _received = 0;
+  int _total = 0;
+  String? _error;
+
+  bool get _busy => _stage != _UpdateStage.idle;
+
+  String _mb(int bytes) => (bytes / (1024 * 1024)).toStringAsFixed(1);
+
+  Future<void> _update() async {
+    final url = AppInstaller.resolveUrl(
+      widget.release.downloadUrl,
+      baseUrl: widget.baseUrl,
+    );
+    if (url == null) {
+      setState(() => _error = 'ລິ້ງອັບເດດບໍ່ຖືກຕ້ອງ — ກະລຸນາແຈ້ງ IT');
+      return;
+    }
+    // Only Android can side-load an APK; anything else gets the browser.
+    if (!AppInstaller.canInstallInApp) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+      return;
+    }
+
+    setState(() {
+      _stage = _UpdateStage.downloading;
+      _progress = 0;
+      _received = 0;
+      _total = 0;
+      _error = null;
+    });
+    try {
+      final apk = await AppInstaller.download(
+        url,
+        onProgress: (progress, received, total) {
+          if (!mounted) return;
+          setState(() {
+            _progress = progress;
+            _received = received;
+            _total = total;
+          });
+        },
+      );
+      if (!mounted) return;
+      setState(() => _stage = _UpdateStage.installing);
+      await AppInstaller.install(apk);
+      // The installer is in front of the app now. Back to idle so the
+      // button works again if the install is cancelled.
+      if (mounted) setState(() => _stage = _UpdateStage.idle);
+    } on AppUpdateException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _stage = _UpdateStage.idle;
+        _error = e.message;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _stage = _UpdateStage.idle;
+        _error = 'ອັບເດດບໍ່ສຳເລັດ — $e';
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final url = release.downloadUrl.startsWith('http')
-        ? release.downloadUrl
-        : '$baseUrl${release.downloadUrl}';
+    final release = widget.release;
     return PopScope(
       canPop: false,
       child: Scaffold(
@@ -189,17 +265,65 @@ class ForcedUpdateScreen extends StatelessWidget {
                       ),
                     ),
                   ],
+                  if (_busy) ...[
+                    const SizedBox(height: kSpace5),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        // -1 means the server sent no Content-Length, so
+                        // the bar sweeps rather than sitting at zero.
+                        value: _stage == _UpdateStage.installing
+                            ? null
+                            : (_progress < 0 ? null : _progress),
+                        minHeight: 8,
+                        backgroundColor: AppColors.cardElev,
+                      ),
+                    ),
+                    const SizedBox(height: kSpace2),
+                    Text(
+                      _stage == _UpdateStage.installing
+                          ? 'ກຳລັງເປີດຕົວຕິດຕັ້ງ…'
+                          : _total > 0
+                          ? 'ກຳລັງດາວໂຫຼດ ${_mb(_received)} / ${_mb(_total)} MB'
+                          : 'ກຳລັງດາວໂຫຼດ…',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                  if (_error != null) ...[
+                    const SizedBox(height: kSpace3),
+                    Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.45,
+                        color: AppColors.danger,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: kSpace5),
                   SizedBox(
                     width: double.infinity,
                     height: 50,
                     child: FilledButton.icon(
-                      onPressed: () => launchUrl(
-                        Uri.parse(url),
-                        mode: LaunchMode.externalApplication,
+                      onPressed: _busy ? null : _update,
+                      icon: Icon(
+                        _busy
+                            ? Icons.hourglass_top_rounded
+                            : _error != null
+                            ? Icons.refresh_rounded
+                            : Icons.download_rounded,
                       ),
-                      icon: const Icon(Icons.download_rounded),
-                      label: const Text('ດາວໂຫຼດລຸ້ນໃໝ່'),
+                      label: Text(
+                        _busy
+                            ? 'ກຳລັງອັບເດດ…'
+                            : _error != null
+                            ? 'ລອງໃໝ່'
+                            : 'ອັບເດດດຽວນີ້',
+                      ),
                     ),
                   ),
                 ],

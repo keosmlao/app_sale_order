@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.8+9
+version: 1.0.9+10
 
 environment:
   sdk: ^3.8.1
@@ -49,8 +49,15 @@ dependencies:
   battery_plus: ^6.0.0
   device_info_plus: ^11.0.0
   package_info_plus: ^8.0.0
-  # Opens the download page when a forced update is required.
+  # Opens the download page when a forced update is required, and is the
+  # iOS fallback for the in-app updater below.
   url_launcher: ^6.3.0
+  # In-app APK update (services/app_update.dart), the same pair app_tms
+  # uses: open_filex hands the downloaded file to the system installer,
+  # permission_handler asks for REQUEST_INSTALL_PACKAGES first so the
+  # intent is not silently refused.
+  open_filex: ^4.7.0
+  permission_handler: ^11.3.1
   geolocator: ^13.0.0
 
 dev_dependencies:
