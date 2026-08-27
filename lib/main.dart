@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'app_scope.dart';
 import 'app_theme.dart';
 import 'config.dart';
@@ -14,6 +15,24 @@ import 'screens/home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // A counter tablet is landscape. Turned upright it is 800px wide, which
+  // is under the 1180px the POS splits at, so the page dropped to the
+  // narrow one-step-at-a-time layout meant for a phone — catalogue gone,
+  // wizard back. Nobody sells from a till held upright, so it is pinned.
+  //
+  // Phones are left alone: shortestSide is the standard tablet test, and
+  // a phone in landscape is not what this is for.
+  final view = WidgetsBinding.instance.platformDispatcher.views.first;
+  final shortestSide =
+      (view.physicalSize.shortestSide / view.devicePixelRatio);
+  if (shortestSide >= 600) {
+    await SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
+
   // Run startup awaits in parallel — config (secure storage read), theme, and
   // notifications (Firebase init + local-notif plugin) don't depend on each
   // other.
