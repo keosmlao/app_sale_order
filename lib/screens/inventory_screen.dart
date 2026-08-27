@@ -174,10 +174,15 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   ({int total, int available, int low, int out}) _stockSummary() {
     final lowStockCount = _items
-        .where((i) => i.companyBalance > 0 && i.companyBalance <= i.salesMinimumStock)
+        .where(
+          (i) =>
+              i.companyBalance > 0 && i.companyBalance <= i.salesMinimumStock,
+        )
         .length;
     final outOfStockCount = _items.where((i) => i.companyBalance <= 0).length;
-    final availableCount = _items.where((i) => i.companyBalance > i.salesMinimumStock).length;
+    final availableCount = _items
+        .where((i) => i.companyBalance > i.salesMinimumStock)
+        .length;
     return (
       total: _items.length,
       available: availableCount,
@@ -196,7 +201,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
         borderRadius: BorderRadius.circular(kRadiusLg),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withValues(alpha: ThemeService.isDark ? 0.18 : 0.22),
+            color: AppColors.primary.withValues(
+              alpha: ThemeService.isDark ? 0.18 : 0.22,
+            ),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -214,9 +221,15 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(kRadiusMd),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.16),
+                  ),
                 ),
-                child: const Icon(Icons.inventory_2_rounded, color: Colors.white, size: 23),
+                child: const Icon(
+                  Icons.inventory_2_rounded,
+                  color: Colors.white,
+                  size: 23,
+                ),
               ),
               const SizedBox(width: kSpace3),
               Expanded(
@@ -225,12 +238,20 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   children: [
                     const Text(
                       'ສິນຄ້າຄົງເຫຼືອ',
-                      style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     const SizedBox(height: 3),
                     Text(
                       'ກວດສອບຈຳນວນ, ລາຄາ ແລະ ສະຖານةສະຕັອກ',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.78), fontSize: 12, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.78),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
@@ -240,22 +261,49 @@ class _InventoryScreenState extends State<InventoryScreen> {
           const SizedBox(height: kSpace4),
           Row(
             children: [
-              Expanded(child: _InventoryStatTile(label: 'ທັງໝົດ', value: summary.total.toString(), color: Colors.white)),
+              Expanded(
+                child: _InventoryStatTile(
+                  label: 'ທັງໝົດ',
+                  value: summary.total.toString(),
+                  color: Colors.white,
+                ),
+              ),
               const SizedBox(width: kSpace2),
-              Expanded(child: _InventoryStatTile(label: 'ພ້ອມຂາຍ', value: summary.available.toString(), color: AppColors.success)),
+              Expanded(
+                child: _InventoryStatTile(
+                  label: 'ພ້ອມຂາຍ',
+                  value: summary.available.toString(),
+                  color: AppColors.success,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: kSpace2),
           Row(
             children: [
-              Expanded(child: _InventoryStatTile(label: 'ໃກ້ໝົດ', value: summary.low.toString(), color: AppColors.warning)),
+              Expanded(
+                child: _InventoryStatTile(
+                  label: 'ໃກ້ໝົດ',
+                  value: summary.low.toString(),
+                  color: AppColors.warning,
+                ),
+              ),
               const SizedBox(width: kSpace2),
-              Expanded(child: _InventoryStatTile(label: 'ໝົດແລ້ວ', value: summary.out.toString(), color: AppColors.danger)),
+              Expanded(
+                child: _InventoryStatTile(
+                  label: 'ໝົດແລ້ວ',
+                  value: summary.out.toString(),
+                  color: AppColors.danger,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: kSpace3),
           Container(
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(kRadiusMd)),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(kRadiusMd),
+            ),
             child: SearchField(
               controller: _searchCtl,
               hint: 'ຄົ້ນຫາ ຊື່ / ລະຫັດ / ຍີ່ຫໍ້…',
@@ -275,7 +323,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
         color: AppColors.primary,
         backgroundColor: AppColors.cardBg,
         onRefresh: _pullRefresh,
-        child: TabletConstrain(maxWidth: 900, child: _buildBody()),
+        // Full width: this is a grid on a counter tablet, not a form.
+        child: _buildBody(),
       ),
     );
   }
@@ -316,7 +365,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   )
                 else ...[
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(kSpace4, kSpace2, kSpace4, 0),
+                    padding: const EdgeInsets.fromLTRB(
+                      kSpace4,
+                      kSpace2,
+                      kSpace4,
+                      0,
+                    ),
                     sliver: SliverList.builder(
                       itemCount: _items.length,
                       itemBuilder: (context, i) {
@@ -334,7 +388,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   ),
                   if (_hasMore)
                     SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(kSpace4, kSpace2, kSpace4, 110),
+                      padding: const EdgeInsets.fromLTRB(
+                        kSpace4,
+                        kSpace2,
+                        kSpace4,
+                        110,
+                      ),
                       sliver: SliverToBoxAdapter(
                         child: Material(
                           color: Colors.transparent,
@@ -342,18 +401,45 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             onTap: _loadingMore ? null : _loadMore,
                             borderRadius: BorderRadius.circular(kRadiusMd),
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: kSpace3),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: kSpace3,
+                              ),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   if (_loadingMore) ...[
-                                    const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)),
+                                    const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
                                     const SizedBox(width: 8),
-                                    Text('ກຳລັງໂຫຼດ…', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 13)),
+                                    Text(
+                                      'ກຳລັງໂຫຼດ…',
+                                      style: TextStyle(
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                      ),
+                                    ),
                                   ] else ...[
-                                    Icon(Icons.expand_more_rounded, size: 16, color: AppColors.primary),
+                                    Icon(
+                                      Icons.expand_more_rounded,
+                                      size: 16,
+                                      color: AppColors.primary,
+                                    ),
                                     const SizedBox(width: 6),
-                                    Text('ໂຫຼດເພີ່ມ', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 13)),
+                                    Text(
+                                      'ໂຫຼດເພີ່ມ',
+                                      style: TextStyle(
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                      ),
+                                    ),
                                   ],
                                 ],
                               ),
@@ -438,12 +524,18 @@ class _RedesignedInventoryCard extends StatelessWidget {
                   height: 52,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [statusColor.withValues(alpha: 0.2), statusColor.withValues(alpha: 0.05)],
+                      colors: [
+                        statusColor.withValues(alpha: 0.2),
+                        statusColor.withValues(alpha: 0.05),
+                      ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(kRadiusMd),
-                    border: Border.all(color: statusColor.withValues(alpha: 0.3), width: 1.2),
+                    border: Border.all(
+                      color: statusColor.withValues(alpha: 0.3),
+                      width: 1.2,
+                    ),
                   ),
                   child: Icon(
                     Icons.inventory_rounded,
@@ -470,7 +562,11 @@ class _RedesignedInventoryCard extends StatelessWidget {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          Icon(Icons.code, size: 12, color: AppColors.textMuted),
+                          Icon(
+                            Icons.code,
+                            size: 12,
+                            color: AppColors.textMuted,
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             item.code,
@@ -481,13 +577,22 @@ class _RedesignedInventoryCard extends StatelessWidget {
                               color: AppColors.textMuted,
                             ),
                           ),
-                          if (item.brandName != null && item.brandName!.isNotEmpty) ...[
+                          if (item.brandName != null &&
+                              item.brandName!.isNotEmpty) ...[
                             const SizedBox(width: 8),
-                            Icon(Icons.branding_watermark, size: 12, color: AppColors.textMuted),
+                            Icon(
+                              Icons.branding_watermark,
+                              size: 12,
+                              color: AppColors.textMuted,
+                            ),
                             const SizedBox(width: 4),
                             Text(
                               item.brandName!,
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textSecondary,
+                              ),
                             ),
                           ],
                         ],
@@ -496,7 +601,11 @@ class _RedesignedInventoryCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: kSpace2),
-                StatusBadge(label: statusLabel, color: statusColor, size: StatusBadgeSize.small),
+                StatusBadge(
+                  label: statusLabel,
+                  color: statusColor,
+                  size: StatusBadgeSize.small,
+                ),
               ],
             ),
 
@@ -504,18 +613,35 @@ class _RedesignedInventoryCard extends StatelessWidget {
             if (promoName != null && promoName!.isNotEmpty) ...[
               const SizedBox(height: kSpace3),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.brandOrange.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(kRadiusSm),
-                  border: Border.all(color: AppColors.brandOrange.withValues(alpha: 0.22), width: 0.5),
+                  border: Border.all(
+                    color: AppColors.brandOrange.withValues(alpha: 0.22),
+                    width: 0.5,
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.local_offer_rounded, size: 14, color: AppColors.brandOrange),
+                    const Icon(
+                      Icons.local_offer_rounded,
+                      size: 14,
+                      color: AppColors.brandOrange,
+                    ),
                     const SizedBox(width: 4),
-                    Text('ໂປຣ: $promoName', style: const TextStyle(color: AppColors.brandOrange, fontSize: 11, fontWeight: FontWeight.w800)),
+                    Text(
+                      'ໂປຣ: $promoName',
+                      style: const TextStyle(
+                        color: AppColors.brandOrange,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -532,7 +658,11 @@ class _RedesignedInventoryCard extends StatelessWidget {
                   children: [
                     Text(
                       'ສະຕັອກຄົງເຫຼືອ',
-                      style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     Text(
                       '${fmt.format(item.companyBalance)} $unit',
@@ -564,18 +694,33 @@ class _RedesignedInventoryCard extends StatelessWidget {
                       style: TextStyle(color: AppColors.textMuted, fontSize: 9),
                     ),
                     if (item.companyBalance > item.salesMinimumStock)
-                      Icon(Icons.check_circle, size: 12, color: AppColors.success)
+                      Icon(
+                        Icons.check_circle,
+                        size: 12,
+                        color: AppColors.success,
+                      )
                     else if (item.companyBalance > 0)
-                      Icon(Icons.warning_amber_rounded, size: 12, color: AppColors.warning)
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        size: 12,
+                        color: AppColors.warning,
+                      )
                     else
-                      Icon(Icons.cancel_rounded, size: 12, color: AppColors.danger),
+                      Icon(
+                        Icons.cancel_rounded,
+                        size: 12,
+                        color: AppColors.danger,
+                      ),
                   ],
                 ),
               ],
             ),
 
             const SizedBox(height: kSpace4),
-            Divider(height: 1, color: AppColors.border.withValues(alpha: isDark ? 0.25 : 0.45)),
+            Divider(
+              height: 1,
+              color: AppColors.border.withValues(alpha: isDark ? 0.25 : 0.45),
+            ),
             const SizedBox(height: kSpace4),
 
             // Price and action row
@@ -585,7 +730,14 @@ class _RedesignedInventoryCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('ລາຄາຂາຍ', style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w600)),
+                      Text(
+                        'ລາຄາຂາຍ',
+                        style: TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       const SizedBox(height: 2),
                       if (item.salePriceKip > 0)
                         Row(
@@ -601,16 +753,33 @@ class _RedesignedInventoryCard extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(width: 4),
-                            Text('ກີບ', style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w500)),
+                            Text(
+                              'ກີບ',
+                              style: TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                           ],
                         )
                       else
-                        Text('ຍັງບໍ່ມີລາຄາ', style: TextStyle(color: AppColors.textMuted, fontSize: 12, fontStyle: FontStyle.italic)),
+                        Text(
+                          'ຍັງບໍ່ມີລາຄາ',
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
                     ],
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: statusColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(30),
@@ -620,7 +789,14 @@ class _RedesignedInventoryCard extends StatelessWidget {
                     children: [
                       Icon(Icons.chevron_right, size: 16, color: statusColor),
                       const SizedBox(width: 2),
-                      Text('ລາຍລະອຽດ', style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.w700)),
+                      Text(
+                        'ລາຍລະອຽດ',
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -635,7 +811,11 @@ class _RedesignedInventoryCard extends StatelessWidget {
 
 // Helper widgets remain unchanged or slightly polished
 class _InventoryStatTile extends StatelessWidget {
-  const _InventoryStatTile({required this.label, required this.value, required this.color});
+  const _InventoryStatTile({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
   final String label;
   final String value;
   final Color color;
@@ -644,7 +824,10 @@ class _InventoryStatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isWhite = color == Colors.white;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: kSpace3, vertical: kSpace2),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpace3,
+        vertical: kSpace2,
+      ),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(kRadiusMd),
@@ -652,10 +835,36 @@ class _InventoryStatTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(width: 8, height: 8, decoration: BoxDecoration(color: isWhite ? Colors.white : color, shape: BoxShape.circle)),
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: isWhite ? Colors.white : color,
+              shape: BoxShape.circle,
+            ),
+          ),
           const SizedBox(width: kSpace2),
-          Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.74), fontSize: 11, fontWeight: FontWeight.w700))),
-          Text(value, style: TextStyle(color: isWhite ? Colors.white : color, fontSize: 16, fontWeight: FontWeight.w900, fontFeatures: kTabularFigures)),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.74),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: isWhite ? Colors.white : color,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              fontFeatures: kTabularFigures,
+            ),
+          ),
         ],
       ),
     );
@@ -681,21 +890,53 @@ class _EmptyView extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppColors.cardBg,
                 shape: BoxShape.circle,
-                border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
-                boxShadow: [BoxShadow(color: AppColors.gold.withValues(alpha: 0.10), blurRadius: 16, offset: const Offset(0, 6))],
+                border: Border.all(
+                  color: AppColors.gold.withValues(alpha: 0.3),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.gold.withValues(alpha: 0.10),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
               ),
-              child: Icon(Icons.inventory_2_outlined, color: AppColors.gold, size: 30),
+              child: Icon(
+                Icons.inventory_2_outlined,
+                color: AppColors.gold,
+                size: 30,
+              ),
             ),
             const SizedBox(height: 14),
-            Text(hasQuery ? 'ບໍ່ພົບສິນຄ້າທີ່ຄົ້ນຫາ' : 'ບໍ່ມີສິນຄ້າ', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
+            Text(
+              hasQuery ? 'ບໍ່ພົບສິນຄ້າທີ່ຄົ້ນຫາ' : 'ບໍ່ມີສິນຄ້າ',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
             const SizedBox(height: 4),
-            Text('ລອງປ່ຽນ scope ຫຼື ລ້າງຕົວກອງ', style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+            Text(
+              'ລອງປ່ຽນ scope ຫຼື ລ້າງຕົວກອງ',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+            ),
             const SizedBox(height: 14),
             OutlinedButton.icon(
               onPressed: onClear,
               icon: Icon(Icons.clear_all, size: 16, color: AppColors.gold),
-              label: Text('ລ້າງຕົວກອງ', style: TextStyle(color: AppColors.gold, fontWeight: FontWeight.w700)),
-              style: OutlinedButton.styleFrom(side: BorderSide(color: AppColors.gold.withValues(alpha: 0.4)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+              label: Text(
+                'ລ້າງຕົວກອງ',
+                style: TextStyle(
+                  color: AppColors.gold,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: AppColors.gold.withValues(alpha: 0.4)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
             ),
           ],
         ),
@@ -713,25 +954,57 @@ class _ErrorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(color: AppColors.cardBg, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
       child: Column(
         children: [
           Container(
             width: 52,
             height: 52,
-            decoration: BoxDecoration(color: AppColors.danger.withValues(alpha: 0.14), shape: BoxShape.circle),
-            child: const Icon(Icons.cloud_off, color: AppColors.danger, size: 26),
+            decoration: BoxDecoration(
+              color: AppColors.danger.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.cloud_off,
+              color: AppColors.danger,
+              size: 26,
+            ),
           ),
           const SizedBox(height: 12),
-          Text('ດຶງຂໍ້ມູນບໍ່ສຳເລັດ', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
+          Text(
+            'ດຶງຂໍ້ມູນບໍ່ສຳເລັດ',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
           const SizedBox(height: 4),
-          Text(message, textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
           const SizedBox(height: 14),
           FilledButton.icon(
             onPressed: onRetry,
             icon: Icon(Icons.refresh, size: 17, color: AppColors.bg),
-            label: Text('ລອງໃໝ່', style: TextStyle(color: AppColors.bg, fontWeight: FontWeight.w800)),
-            style: FilledButton.styleFrom(backgroundColor: AppColors.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            label: Text(
+              'ລອງໃໝ່',
+              style: TextStyle(
+                color: AppColors.bg,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.gold,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
           ),
         ],
       ),

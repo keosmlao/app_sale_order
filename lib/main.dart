@@ -93,7 +93,9 @@ class _OdgSaleAppState extends State<OdgSaleApp> with WidgetsBindingObserver {
             navigatorObservers: [PresenceNavObserver()],
             theme: buildLightTheme(),
             darkTheme: buildDarkTheme(),
-            themeMode: currentMode == AppThemeMode.dark ? ThemeMode.dark : ThemeMode.light,
+            themeMode: currentMode == AppThemeMode.dark
+                ? ThemeMode.dark
+                : ThemeMode.light,
             builder: (context, child) {
               final media = MediaQuery.of(context);
               return AmbientGradientBackground(
@@ -167,7 +169,9 @@ class _BootstrapState extends State<_Bootstrap> {
           );
         }
         final boot = snap.data;
-        return boot?.signedIn == true ? const HomeScreen() : const LoginScreen();
+        return boot?.signedIn == true
+            ? const HomeScreen()
+            : const LoginScreen();
       },
     );
   }

@@ -234,92 +234,92 @@ class _OrdersScreenState extends State<OrdersScreen> {
             ),
           ),
         ),
-        body: TabletConstrain(
-          maxWidth: 900,
-          child: RefreshIndicator(
-            color: AppColors.primary,
-            backgroundColor: AppColors.cardBg,
-            onRefresh: _reload,
-            child: FutureBuilder<List<SaleOrder>>(
-              future: _future,
-              builder: (context, snap) {
-                if (snap.connectionState != ConnectionState.done) {
-                  return const BrandedSpinner(label: 'ກຳລັງໂຫຼດ Order…');
-                }
-                if (snap.hasError) {
-                  return ListView(
-                    padding: const EdgeInsets.all(kSpace5),
-                    children: [
-                      const SizedBox(height: 60),
-                      _ErrorCard(
-                        message: snap.error.toString(),
-                        onRetry: _reload,
-                      ),
-                    ],
-                  );
-                }
-                final orders = snap.data ?? [];
-                final scoped = orders;
-                final filtered = _filtered(orders);
-                final statusCounts = _countByStatus(scoped);
-                return CustomScrollView(
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: _OrdersHeader(
-                        filter: _filter,
-                        totalCount: orders.length,
-                        pendingCount: statusCounts['PENDING'] ?? 0,
-                        completedCount: statusCounts['COMPLETED'] ?? 0,
-                        pendingTotal: _sumByStatus(scoped, 'PENDING'),
-                        completedTotal: _sumByStatus(scoped, 'COMPLETED'),
-                        moneyFmt: _moneyFmt,
-                        searchController: _searchCtl,
-                        onSearchChanged: _onSearchChanged,
-                        onFilterChanged: (f) => setState(() => _filter = f),
-                      ),
+        // Full width. Clamped to 900 and centred, the order list read as a
+        // phone column marooned in grey on an 11" tablet — the same reason
+        // the POS looked untouched however much it was rebuilt.
+        body: RefreshIndicator(
+          color: AppColors.primary,
+          backgroundColor: AppColors.cardBg,
+          onRefresh: _reload,
+          child: FutureBuilder<List<SaleOrder>>(
+            future: _future,
+            builder: (context, snap) {
+              if (snap.connectionState != ConnectionState.done) {
+                return const BrandedSpinner(label: 'ກຳລັງໂຫຼດ Order…');
+              }
+              if (snap.hasError) {
+                return ListView(
+                  padding: const EdgeInsets.all(kSpace5),
+                  children: [
+                    const SizedBox(height: 60),
+                    _ErrorCard(
+                      message: snap.error.toString(),
+                      onRetry: _reload,
                     ),
-                    if (orders.isEmpty)
-                      const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: _EmptyOrders(),
-                      )
-                    else if (filtered.isEmpty)
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: _NoMatchView(onClear: _clearFilters),
-                      )
-                    else
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(
-                          kSpace4,
-                          kSpace2,
-                          kSpace4,
-                          96,
-                        ),
-                        sliver: SliverList.builder(
-                          itemCount: filtered.length,
-                          itemBuilder: (context, i) {
-                            final order = filtered[i];
-                            return Padding(
-                              padding: EdgeInsets.only(
-                                bottom: i == filtered.length - 1 ? 0 : kSpace3,
-                              ),
-                              child: _OrderRow(
-                                order: order,
-                                fmt: _moneyFmt,
-                                dateFmt: _dateFmt,
-                                statusColor: _statusColor(order.status),
-                                statusLabel: _statusLabel(order.status),
-                                onTap: () => _showDetail(order),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
                   ],
                 );
-              },
-            ),
+              }
+              final orders = snap.data ?? [];
+              final scoped = orders;
+              final filtered = _filtered(orders);
+              final statusCounts = _countByStatus(scoped);
+              return CustomScrollView(
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: _OrdersHeader(
+                      filter: _filter,
+                      totalCount: orders.length,
+                      pendingCount: statusCounts['PENDING'] ?? 0,
+                      completedCount: statusCounts['COMPLETED'] ?? 0,
+                      pendingTotal: _sumByStatus(scoped, 'PENDING'),
+                      completedTotal: _sumByStatus(scoped, 'COMPLETED'),
+                      moneyFmt: _moneyFmt,
+                      searchController: _searchCtl,
+                      onSearchChanged: _onSearchChanged,
+                      onFilterChanged: (f) => setState(() => _filter = f),
+                    ),
+                  ),
+                  if (orders.isEmpty)
+                    const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _EmptyOrders(),
+                    )
+                  else if (filtered.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _NoMatchView(onClear: _clearFilters),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(
+                        kSpace4,
+                        kSpace2,
+                        kSpace4,
+                        96,
+                      ),
+                      sliver: SliverList.builder(
+                        itemCount: filtered.length,
+                        itemBuilder: (context, i) {
+                          final order = filtered[i];
+                          return Padding(
+                            padding: EdgeInsets.only(
+                              bottom: i == filtered.length - 1 ? 0 : kSpace3,
+                            ),
+                            child: _OrderRow(
+                              order: order,
+                              fmt: _moneyFmt,
+                              dateFmt: _dateFmt,
+                              statusColor: _statusColor(order.status),
+                              statusLabel: _statusLabel(order.status),
+                              onTap: () => _showDetail(order),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -1221,11 +1221,14 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: order.items.length,
-                separatorBuilder: (_, __) => Divider(height: 0, thickness: 1, color: AppColors.divider),
+                separatorBuilder: (_, __) =>
+                    Divider(height: 0, thickness: 1, color: AppColors.divider),
                 itemBuilder: (context, i) {
                   final item = order.items[i];
                   final product = item.product;
-                  final hasImage = product?.imageUrl != null && product!.imageUrl!.trim().isNotEmpty;
+                  final hasImage =
+                      product?.imageUrl != null &&
+                      product!.imageUrl!.trim().isNotEmpty;
 
                   return AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
@@ -1244,7 +1247,8 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
                                 ? Image.network(
                                     product.imageUrl!,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => _itemPlaceholder(),
+                                    errorBuilder: (_, __, ___) =>
+                                        _itemPlaceholder(),
                                   )
                                 : _itemPlaceholder(),
                           ),
@@ -1273,9 +1277,14 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
                                   const SizedBox(width: 8),
                                   // Quantity badge
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: AppColors.primary.withValues(alpha: 0.12),
+                                      color: AppColors.primary.withValues(
+                                        alpha: 0.12,
+                                      ),
                                       borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: Text(
@@ -1311,7 +1320,13 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
                                       fontSize: 13,
                                     ),
                                   ),
-                                  Text(' × ', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                                  Text(
+                                    ' × ',
+                                    style: TextStyle(
+                                      color: AppColors.textMuted,
+                                      fontSize: 11,
+                                    ),
+                                  ),
                                   Text(
                                     item.quantity.toString(),
                                     style: TextStyle(

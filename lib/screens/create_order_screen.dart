@@ -443,9 +443,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   List<Promotion> _applicablePromosForProduct(String code) {
     if (_activePromos.isEmpty) return const [];
     final t = code.trim();
-    return _activePromos
-        .where((p) => p.triggerItemCode?.trim() == t)
-        .toList();
+    return _activePromos.where((p) => p.triggerItemCode?.trim() == t).toList();
   }
 
   // Human-readable terms + value of a promotion, shown in the chooser sheet.
@@ -1335,7 +1333,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   // back and the paperwork follows that number, not just the item code. So
   // once the storefront is chosen, ask which unit is going out. Anywhere
   // else the shelf is the answer and there is nothing to choose.
-  Future<void> _maybePickSerial(InventoryItem item, String warehouseCode) async {
+  Future<void> _maybePickSerial(
+    InventoryItem item,
+    String warehouseCode,
+  ) async {
     if (warehouseCode != kStorefrontWarehouse) return;
     List<SerialUnit> units;
     try {
@@ -1979,61 +1980,71 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     final isEdit = widget.editOrder != null;
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: widget.embedded ? null : AppBar(
-        backgroundColor: AppColors.primary,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        automaticallyImplyLeading: false,
-        leading: widget.embedded
-            ? null
-            : Padding(
-                padding: const EdgeInsets.only(left: kSpace2),
-                child: IconButton(
-                  tooltip: 'ປິດ',
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  icon: const Icon(
-                    Icons.close_rounded,
-                    size: 22,
-                    color: Colors.white,
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              backgroundColor: AppColors.primary,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              automaticallyImplyLeading: false,
+              leading: widget.embedded
+                  ? null
+                  : Padding(
+                      padding: const EdgeInsets.only(left: kSpace2),
+                      child: IconButton(
+                        tooltip: 'ປິດ',
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          size: 22,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+              leadingWidth: widget.embedded ? 0 : 56,
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isEdit ? 'ແກ້ໄຂບິນ' : 'ສ້າງບິນໃໝ່',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 17,
+                      height: 1.1,
+                    ),
                   ),
-                ),
+                  if (isEdit)
+                    Text(
+                      widget.editOrder!.docNo ??
+                          '#${widget.editOrder!.id.toUpperCase()}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                ],
               ),
-        leadingWidth: widget.embedded ? 0 : 56,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              isEdit ? 'ແກ້ໄຂບິນ' : 'ສ້າງບິນໃໝ່',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w900,
-                fontSize: 17,
-                height: 1.1,
-              ),
+              actions: [_buildPromoAppBarButton()],
             ),
-            if (isEdit)
-              Text(
-                widget.editOrder!.docNo ??
-                    '#${widget.editOrder!.id.toUpperCase()}',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.w700,
-                  fontSize: 11,
-                  letterSpacing: 0.3,
-                ),
-              ),
-          ],
-        ),
-        actions: [_buildPromoAppBarButton()],
-      ),
+      // Full bleed. _tabletConstrain() centres its child inside 720px, which
+      // is right for a form and ruinous for this screen: on a tablet it
+      // squeezed the whole two-pane POS into a phone-width column with grey
+      // either side, so every layout change made here landed inside a box
+      // narrow enough to hide it. The web POS uses the whole viewport.
       body: _loading
           ? const BrandedSpinner(label: 'ກຳລັງເຕັມບິນ…')
-          : _tabletConstrain(_orderEntryBody()),
-      bottomNavigationBar: _loading
+          : _orderEntryBody(),
+      // On a tablet the pay button belongs at the foot of the sale rail,
+      // under the total it is paying — where the web puts it — not spread
+      // across the bottom of the catalogue as well.
+      bottomNavigationBar: _loading || isTablet(context)
           ? null
-          : _tabletConstrain(_buildMainSubmitBar()),
+          : _buildMainSubmitBar(),
     );
   }
 
@@ -2139,9 +2150,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 _paneHeader(
                   icon: Icons.inventory_2_rounded,
                   label: 'ສິນຄ້າ',
-                  trailing: _catalogBusy
-                      ? '…'
-                      : '${_catalog.length} ລາຍການ',
+                  trailing: _catalogBusy ? '…' : '${_catalog.length} ລາຍການ',
                   action: _buildPromoAppBarButton(compact: true),
                 ),
               _buildSearchRow(refresh: () => setState(() {})),
@@ -2205,6 +2214,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                   ],
                 ),
               ),
+              _buildMainSubmitBar(),
             ],
           ),
         ),
@@ -2992,7 +3002,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     );
   }
 
-
   // ── Tablet catalogue ────────────────────────────────────────────────
   // On a tablet the products stay on screen rather than living behind the
   // "add product" sheet: the web POS works this way and a counter sale is
@@ -3016,10 +3025,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     final seq = ++_catalogSeq;
     if (mounted) setState(() => _catalogBusy = true);
     try {
-      final rows = await AppScope.of(context).api.fetchPosCatalog(
-        warehouse: kStorefrontWarehouse,
-        q: q,
-      );
+      final rows = await AppScope.of(
+        context,
+      ).api.fetchPosCatalog(warehouse: kStorefrontWarehouse, q: q);
       if (!mounted || seq != _catalogSeq) return;
       setState(() {
         _catalog = rows;
@@ -3434,16 +3442,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       );
     }
     return rows;
-  }
-
-  Widget _tabletConstrain(Widget child) {
-    if (!isTablet(context)) return child;
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720),
-        child: child,
-      ),
-    );
   }
 
   // ── Inline product search ─────────────────────────────────────────────
@@ -4345,10 +4343,7 @@ class _SelectedRow extends StatelessWidget {
             Align(
               alignment: Alignment.centerLeft,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 3,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: AppColors.primary50,
                   borderRadius: BorderRadius.circular(kRadiusSm),
