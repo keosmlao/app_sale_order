@@ -23,14 +23,14 @@ class ThemeService {
 
 // ── Dynamic Color Palette ───────────────────────────────────────────────────
 class AppColors {
-  // Brand — ODG commerce palette. Teal carries primary actions and workflow
-  // progress; amber is reserved for attention, promotion, and sales accents.
-  static const primary = Color(0xFF0F766E);
-  static const primaryDark = Color(0xFF115E59);
-  static const primaryLight = Color(0xFF14B8A6);
-  static const primary50 = Color(0xFFECFDF5);
-  static const primary100 = Color(0xFFCCFBF1);
-  static const accent = Color(0xFFF59E0B);
+  // Brand — matches the ODG web app palette (web_sale_order globals.css).
+  // Indigo carries primary actions; sky is the secondary highlight.
+  static const primary = Color(0xFF6366F1); // indigo-500
+  static const primaryDark = Color(0xFF4F46E5); // indigo-600
+  static const primaryLight = Color(0xFF818CF8); // indigo-400
+  static const primary50 = Color(0xFFF5F3FF); // violet-50
+  static const primary100 = Color(0xFFEDE9FE); // violet-100
+  static const accent = Color(0xFF0284C7); // sky-600
 
   // Secondary brand — kept under the old name for compatibility.
   static const brandOrange = Color(0xFFF59E0B);
@@ -39,32 +39,32 @@ class AppColors {
   static const brandOrange50 = Color(0xFFFFF7ED);
 
   // Status — distinct from brand so they read as status, not as accent.
-  static const success = Color(0xFF24A148); // success green
+  static const success = Color(0xFF10B981); // emerald-500 (web)
   static const warning = Color(0xFFF59E0B); // amber-500
   static const danger = Color(0xFFEF4444); // red-500
   static const info = Color(0xFF0EA5E9); // sky-500
 
-  // Surfaces — warm grouped background with high-contrast card surfaces.
+  // Surfaces — cool slate grouped background with white card surfaces (web).
   static Color get bg =>
-      ThemeService.isDark ? const Color(0xFF071A1A) : const Color(0xFFF7F8F3);
+      ThemeService.isDark ? const Color(0xFF0B1120) : const Color(0xFFF8FAFC);
   static Color get cardBg =>
-      ThemeService.isDark ? const Color(0xFF0D2424) : const Color(0xFFFFFFFF);
+      ThemeService.isDark ? const Color(0xFF111827) : const Color(0xFFFFFFFF);
   static Color get cardElev =>
-      ThemeService.isDark ? const Color(0xFF133333) : const Color(0xFFF0F5F1);
+      ThemeService.isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
   static Color get border =>
-      ThemeService.isDark ? const Color(0xFF1E4644) : const Color(0xFFDCE7E0);
+      ThemeService.isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
   static Color get divider =>
-      ThemeService.isDark ? const Color(0xFF183A39) : const Color(0xFFE6EEE8);
+      ThemeService.isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
 
-  // Typography — tuned for dense Lao business interfaces.
+  // Typography — slate ramp matching the web app.
   static Color get textPrimary =>
-      ThemeService.isDark ? const Color(0xFFF8FAFC) : const Color(0xFF111827);
+      ThemeService.isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A);
   static Color get textSecondary =>
-      ThemeService.isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155);
+      ThemeService.isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569);
   static Color get textMuted =>
       ThemeService.isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
   static Color get textSoft =>
-      ThemeService.isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1);
+      ThemeService.isDark ? const Color(0xFF475569) : const Color(0xFF94A3B8);
 
   // ── Legacy aliases (preserve compatibility with original references) ──
   static Color get gold => primary;
@@ -172,7 +172,7 @@ BoxDecoration posCardDecoration({
             BoxShadow(
               color: ThemeService.isDark
                   ? Colors.black.withValues(alpha: 0.24)
-                  : const Color(0x120F766E),
+                  : const Color(0x126366F1),
               blurRadius: 16,
               spreadRadius: -6,
               offset: const Offset(0, 8),
@@ -204,7 +204,7 @@ LinearGradient get kPosCardGradient => LinearGradient(
   end: Alignment.bottomRight,
   colors: [
     AppColors.cardBg,
-    ThemeService.isDark ? const Color(0xFF102D2C) : const Color(0xFFFAFCF8),
+    ThemeService.isDark ? const Color(0xFF111E33) : const Color(0xFFFBFCFE),
   ],
 );
 
@@ -218,8 +218,8 @@ LinearGradient get kAppBackgroundGradient => LinearGradient(
   begin: Alignment.topLeft,
   end: Alignment.bottomLeft,
   colors: ThemeService.isDark
-      ? const [Color(0xFF071A1A), Color(0xFF0B2422)]
-      : const [Color(0xFFF7F8F3), Color(0xFFEEF7F3)],
+      ? const [Color(0xFF0B1120), Color(0xFF111A2E)]
+      : const [Color(0xFFF8FAFC), Color(0xFFEEF2FB)],
 );
 
 // ─── Page Transitions ──────────────────────────────────────────────────────
@@ -620,7 +620,7 @@ ThemeData buildLightTheme() {
     primaryContainer: AppColors.primary50,
     onPrimaryContainer: AppColors.primaryDark,
     secondary: AppColors.accent,
-    onSecondary: const Color(0xFF111827),
+    onSecondary: Colors.white,
     surface: Colors.white,
     onSurface: AppColors.textPrimary,
     surfaceContainerHighest: AppColors.cardElev,
@@ -829,7 +829,7 @@ ThemeData buildLightTheme() {
     ),
 
     snackBarTheme: SnackBarThemeData(
-      backgroundColor: const Color(0xFF12312F),
+      backgroundColor: const Color(0xFF1E293B),
       contentTextStyle: const TextStyle(
         color: Colors.white,
         fontSize: 14,
@@ -961,10 +961,10 @@ ThemeData buildDarkTheme() {
   final scheme = ColorScheme.dark(
     primary: AppColors.primary,
     onPrimary: Colors.white,
-    primaryContainer: const Color(0xFF123A38),
+    primaryContainer: const Color(0xFF312E81),
     onPrimaryContainer: AppColors.primaryLight,
     secondary: AppColors.accent,
-    onSecondary: const Color(0xFF111827),
+    onSecondary: Colors.white,
     surface: AppColors.cardBg,
     onSurface: AppColors.textPrimary,
     surfaceContainerHighest: AppColors.cardElev,
@@ -1137,7 +1137,7 @@ ThemeData buildDarkTheme() {
         borderRadius: BorderRadius.circular(kRadiusXl),
       ),
       side: BorderSide.none,
-      selectedColor: const Color(0xFF123A38),
+      selectedColor: const Color(0xFF312E81),
       checkmarkColor: AppColors.primaryLight,
       labelStyle: TextStyle(
         color: AppColors.textPrimary,
@@ -1160,7 +1160,7 @@ ThemeData buildDarkTheme() {
     ),
 
     snackBarTheme: SnackBarThemeData(
-      backgroundColor: const Color(0xFF12312F),
+      backgroundColor: const Color(0xFF1E293B),
       contentTextStyle: const TextStyle(
         color: Color(0xFFF8FAFC),
         fontSize: 14,
@@ -1298,7 +1298,7 @@ class AmbientBackgroundPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = isDark ? const Color(0xFF071A1A) : const Color(0xFFF7F8F3);
+      ..color = isDark ? const Color(0xFF0B1120) : const Color(0xFFF8FAFC);
     canvas.drawRect(Offset.zero & size, paint);
   }
 
@@ -1318,7 +1318,7 @@ class GlassBackground extends StatelessWidget {
       builder: (context, mode, _) {
         final isDark = mode == AppThemeMode.dark;
         return ColoredBox(
-          color: isDark ? const Color(0xFF071A1A) : const Color(0xFFF7F8F3),
+          color: isDark ? const Color(0xFF0B1120) : const Color(0xFFF8FAFC),
           child: child,
         );
       },
@@ -1715,18 +1715,18 @@ class AmbientGradientBackground extends StatelessWidget {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Color(0xFF071A1A),
-                      Color(0xFF0B2422),
-                      Color(0xFF1C2A1F),
+                      Color(0xFF0B1120),
+                      Color(0xFF111A2E),
+                      Color(0xFF1B2440),
                     ],
                   )
                 : const LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Color(0xFFF9FAF5),
-                      Color(0xFFEEF7F3),
-                      Color(0xFFF6F0E6),
+                      Color(0xFFF8FAFC),
+                      Color(0xFFEEF2FB),
+                      Color(0xFFF1F5FF),
                     ],
                   ),
           ),
@@ -2227,7 +2227,7 @@ class SegmentedToggle<T> extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF152A20) : const Color(0xFFF1F5F9),
+        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(kRadiusPill),
       ),
       child: Row(

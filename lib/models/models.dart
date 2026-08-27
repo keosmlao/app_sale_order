@@ -744,7 +744,8 @@ class SetWarehouseAvailability {
         components:
             (j['components'] as List<dynamic>?)
                 ?.map(
-                  (e) => SetComponentBalance.fromJson(e as Map<String, dynamic>),
+                  (e) =>
+                      SetComponentBalance.fromJson(e as Map<String, dynamic>),
                 )
                 .toList() ??
             const [],
@@ -932,6 +933,8 @@ class SaleOrder {
   final String? note;
   // Settlement info — non-null once the cashier has received payment.
   final SettlementInfo? settlement;
+  // Channel that created the order: 'web' | 'app' | null (older orders).
+  final String? source;
 
   SaleOrder({
     required this.id,
@@ -948,6 +951,7 @@ class SaleOrder {
     this.extraDiscount = 0,
     this.note,
     this.settlement,
+    this.source,
   });
 
   factory SaleOrder.fromJson(Map<String, dynamic> j) => SaleOrder(
@@ -982,6 +986,9 @@ class SaleOrder {
     settlement: j['settlement'] is Map<String, dynamic>
         ? SettlementInfo.fromJson(j['settlement'] as Map<String, dynamic>)
         : null,
+    source: (j['source'] as String?)?.trim().isEmpty == true
+        ? null
+        : j['source'] as String?,
   );
 }
 
@@ -1129,20 +1136,59 @@ class SalespersonStats {
   });
 
   factory SalespersonStats.fromJson(Map<String, dynamic> j) => SalespersonStats(
-        userOwner: j['userOwner'] as String?,
-        employeeCode: j['employeeCode'] as String?,
-        displayName: j['displayName'] as String? ?? '—',
-        positionCode: j['positionCode'] as String?,
-        pendingCount: (j['pendingCount'] as num?)?.toInt() ?? 0,
-        completedCount: (j['completedCount'] as num?)?.toInt() ?? 0,
-        cancelledCount: (j['cancelledCount'] as num?)?.toInt() ?? 0,
-        pendingAmount: _toDouble(j['pendingAmount']),
-        completedAmount: _toDouble(j['completedAmount']),
-        cancelledAmount: _toDouble(j['cancelledAmount']),
-        activeTotal: _toDouble(j['activeTotal']),
-        activeOrders: (j['activeOrders'] as num?)?.toInt() ?? 0,
-        avgOrderValue: _toDouble(j['avgOrderValue']),
-      );
+    userOwner: j['userOwner'] as String?,
+    employeeCode: j['employeeCode'] as String?,
+    displayName: j['displayName'] as String? ?? '—',
+    positionCode: j['positionCode'] as String?,
+    pendingCount: (j['pendingCount'] as num?)?.toInt() ?? 0,
+    completedCount: (j['completedCount'] as num?)?.toInt() ?? 0,
+    cancelledCount: (j['cancelledCount'] as num?)?.toInt() ?? 0,
+    pendingAmount: _toDouble(j['pendingAmount']),
+    completedAmount: _toDouble(j['completedAmount']),
+    cancelledAmount: _toDouble(j['cancelledAmount']),
+    activeTotal: _toDouble(j['activeTotal']),
+    activeOrders: (j['activeOrders'] as num?)?.toInt() ?? 0,
+    avgOrderValue: _toDouble(j['avgOrderValue']),
+  );
+}
+
+class IncentiveRow {
+  final String employeeCode;
+  final String displayName;
+  final String groupCode;
+  final double soldQty;
+  final double salesAmount;
+  final double targetPerPerson;
+  final double achievementPct;
+  final double normalBonus;
+  final double multiplier;
+  final double netBonus;
+
+  const IncentiveRow({
+    required this.employeeCode,
+    required this.displayName,
+    required this.groupCode,
+    required this.soldQty,
+    required this.salesAmount,
+    required this.targetPerPerson,
+    required this.achievementPct,
+    required this.normalBonus,
+    required this.multiplier,
+    required this.netBonus,
+  });
+
+  factory IncentiveRow.fromJson(Map<String, dynamic> j) => IncentiveRow(
+    employeeCode: j['employeeCode']?.toString() ?? '',
+    displayName: j['displayName'] as String? ?? '—',
+    groupCode: j['groupCode'] as String? ?? '',
+    soldQty: _toDouble(j['soldQty']),
+    salesAmount: _toDouble(j['salesAmount']),
+    targetPerPerson: _toDouble(j['targetPerPerson']),
+    achievementPct: _toDouble(j['achievementPct']),
+    normalBonus: _toDouble(j['normalBonus']),
+    multiplier: _toDouble(j['multiplier']),
+    netBonus: _toDouble(j['netBonus']),
+  );
 }
 
 // One row in `/api/reports/shift-summary` — per-cashier-per-day totals
@@ -1173,17 +1219,17 @@ class CashierShiftRow {
   });
 
   factory CashierShiftRow.fromJson(Map<String, dynamic> j) => CashierShiftRow(
-        cashierCode: j['cashierCode'] as String? ?? '',
-        cashierName: j['cashierName'] as String? ?? '—',
-        day: j['day'] as String? ?? '',
-        billCount: (j['billCount'] as num?)?.toInt() ?? 0,
-        voidedCount: (j['voidedCount'] as num?)?.toInt() ?? 0,
-        totalKip: _toDouble(j['totalKip']),
-        cashKip: _toDouble(j['cashKip']),
-        transferKip: _toDouble(j['transferKip']),
-        redeemedKip: _toDouble(j['redeemedKip']),
-        promoKip: _toDouble(j['promoKip']),
-      );
+    cashierCode: j['cashierCode'] as String? ?? '',
+    cashierName: j['cashierName'] as String? ?? '—',
+    day: j['day'] as String? ?? '',
+    billCount: (j['billCount'] as num?)?.toInt() ?? 0,
+    voidedCount: (j['voidedCount'] as num?)?.toInt() ?? 0,
+    totalKip: _toDouble(j['totalKip']),
+    cashKip: _toDouble(j['cashKip']),
+    transferKip: _toDouble(j['transferKip']),
+    redeemedKip: _toDouble(j['redeemedKip']),
+    promoKip: _toDouble(j['promoKip']),
+  );
 }
 
 // (LoyaltyConfig is defined earlier in this file. Manager-facing extension
@@ -1257,14 +1303,14 @@ class StockRefillItem {
   });
 
   factory StockRefillItem.fromJson(Map<String, dynamic> j) => StockRefillItem(
-        itemCode: j['itemCode'] as String? ?? '',
-        itemName: j['itemName'] as String? ?? '—',
-        warehouseCode: j['warehouseCode'] as String? ?? '',
-        currentBalance: _toDouble(j['currentBalance']),
-        minimumBalance: _toDouble(j['minimumBalance']),
-        deficit: _toDouble(j['deficit']),
-        status: j['status'] as String? ?? '',
-      );
+    itemCode: j['itemCode'] as String? ?? '',
+    itemName: j['itemName'] as String? ?? '—',
+    warehouseCode: j['warehouseCode'] as String? ?? '',
+    currentBalance: _toDouble(j['currentBalance']),
+    minimumBalance: _toDouble(j['minimumBalance']),
+    deficit: _toDouble(j['deficit']),
+    status: j['status'] as String? ?? '',
+  );
 }
 
 // A submitted refill request — flows through pending -> approved/rejected
@@ -1277,7 +1323,8 @@ class StockRefillRequest {
   final String? itemName;
   final double requestedQty;
   final String? reason;
-  final String status; // 'pending' | 'approved' | 'rejected' | 'fulfilled' | 'cancelled'
+  final String
+  status; // 'pending' | 'approved' | 'rejected' | 'fulfilled' | 'cancelled'
   final String? requestedBy;
   final DateTime? requestedAt;
   final String? decidedBy;
@@ -1384,15 +1431,15 @@ class DailySalesTotals {
   });
 
   factory DailySalesTotals.fromJson(Map<String, dynamic> j) => DailySalesTotals(
-        docCount: (j['docCount'] as num?)?.toInt() ?? 0,
-        cakCount: (j['cakCount'] as num?)?.toInt() ?? 0,
-        inkCount: (j['inkCount'] as num?)?.toInt() ?? 0,
-        cakTotal: _toDouble(j['cakTotal']),
-        inkTotal: _toDouble(j['inkTotal']),
-        total: _toDouble(j['total']),
-        totalBeforeVat: _toDouble(j['totalBeforeVat']),
-        totalVat: _toDouble(j['totalVat']),
-      );
+    docCount: (j['docCount'] as num?)?.toInt() ?? 0,
+    cakCount: (j['cakCount'] as num?)?.toInt() ?? 0,
+    inkCount: (j['inkCount'] as num?)?.toInt() ?? 0,
+    cakTotal: _toDouble(j['cakTotal']),
+    inkTotal: _toDouble(j['inkTotal']),
+    total: _toDouble(j['total']),
+    totalBeforeVat: _toDouble(j['totalBeforeVat']),
+    totalVat: _toDouble(j['totalVat']),
+  );
 }
 
 class DailySalesCurrency {
@@ -1476,21 +1523,21 @@ class DailySalesRow {
   });
 
   factory DailySalesRow.fromJson(Map<String, dynamic> j) => DailySalesRow(
-        docNo: j['docNo'] as String? ?? '',
-        docDate: j['docDate'] as String? ?? '',
-        docTime: j['docTime'] as String?,
-        custCode: j['custCode'] as String?,
-        custName: j['custName'] as String?,
-        saleCode: j['saleCode'] as String?,
-        saleFullname: j['saleFullname'] as String?,
-        saleNickname: j['saleNickname'] as String?,
-        currencyCode: j['currencyCode'] as String?,
-        totalAmount: _toDouble(j['totalAmount']),
-        totalAmount2: _toDouble(j['totalAmount2']),
-        totalBeforeVat: _toDouble(j['totalBeforeVat']),
-        totalVatValue: _toDouble(j['totalVatValue']),
-        cancelType: (j['cancelType'] as num?)?.toInt(),
-      );
+    docNo: j['docNo'] as String? ?? '',
+    docDate: j['docDate'] as String? ?? '',
+    docTime: j['docTime'] as String?,
+    custCode: j['custCode'] as String?,
+    custName: j['custName'] as String?,
+    saleCode: j['saleCode'] as String?,
+    saleFullname: j['saleFullname'] as String?,
+    saleNickname: j['saleNickname'] as String?,
+    currencyCode: j['currencyCode'] as String?,
+    totalAmount: _toDouble(j['totalAmount']),
+    totalAmount2: _toDouble(j['totalAmount2']),
+    totalBeforeVat: _toDouble(j['totalBeforeVat']),
+    totalVatValue: _toDouble(j['totalVatValue']),
+    cancelType: (j['cancelType'] as num?)?.toInt(),
+  );
 }
 
 // ── Item analytics ─────────────────────────────────────────────────────
@@ -1515,14 +1562,14 @@ class ItemAnalyticsRow {
   });
 
   factory ItemAnalyticsRow.fromJson(Map<String, dynamic> j) => ItemAnalyticsRow(
-        itemCode: j['itemCode'] as String? ?? '',
-        itemName: j['itemName'] as String?,
-        unitName: j['unitName'] as String?,
-        brandName: j['brandName'] as String?,
-        orderCount: (j['orderCount'] as num?)?.toInt() ?? 0,
-        totalQty: _toDouble(j['totalQty']),
-        totalAmount: _toDouble(j['totalAmount']),
-      );
+    itemCode: j['itemCode'] as String? ?? '',
+    itemName: j['itemName'] as String?,
+    unitName: j['unitName'] as String?,
+    brandName: j['brandName'] as String?,
+    orderCount: (j['orderCount'] as num?)?.toInt() ?? 0,
+    totalQty: _toDouble(j['totalQty']),
+    totalAmount: _toDouble(j['totalAmount']),
+  );
 }
 
 // ── Daily payment settlement ──────────────────────────────────────────
@@ -1621,15 +1668,15 @@ class MemberSummary {
   });
 
   factory MemberSummary.fromJson(Map<String, dynamic> j) => MemberSummary(
-        id: j['id']?.toString() ?? '',
-        code: j['code'] as String?,
-        name: j['name'] as String? ?? '—',
-        phone: j['phone'] as String?,
-        tier: j['tier'] as String?,
-        totalSpent: _toDouble(j['totalSpent']),
-        pointsBalance: _toDouble(j['pointsBalance']),
-        lastVisitAt: j['lastVisitAt'] != null
-            ? DateTime.tryParse(j['lastVisitAt'].toString())
-            : null,
-      );
+    id: j['id']?.toString() ?? '',
+    code: j['code'] as String?,
+    name: j['name'] as String? ?? '—',
+    phone: j['phone'] as String?,
+    tier: j['tier'] as String?,
+    totalSpent: _toDouble(j['totalSpent']),
+    pointsBalance: _toDouble(j['pointsBalance']),
+    lastVisitAt: j['lastVisitAt'] != null
+        ? DateTime.tryParse(j['lastVisitAt'].toString())
+        : null,
+  );
 }

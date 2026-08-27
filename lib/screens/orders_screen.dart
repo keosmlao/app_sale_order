@@ -10,7 +10,11 @@ import '../services/api.dart';
 import 'create_order_screen.dart';
 
 class OrdersScreen extends StatefulWidget {
-  const OrdersScreen({super.key});
+  const OrdersScreen({super.key, this.initialOrderId});
+
+  // When set (e.g. opened from a "new order" push notification), the list
+  // auto-opens this order's detail page once the first load completes.
+  final String? initialOrderId;
 
   @override
   State<OrdersScreen> createState() => _OrdersScreenState();
@@ -27,10 +31,36 @@ class _OrdersScreenState extends State<OrdersScreen> {
   String _filter = 'PENDING';
   String _query = '';
 
+  bool _openedInitial = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _future ??= AppScope.of(context).api.listOrders();
+    final future = _future ??= AppScope.of(context).api.listOrders();
+    // Deep-link from a push notification: once the orders load, find the
+    // target order and open its detail page. Guarded so it only fires once.
+    final wantId = widget.initialOrderId;
+    if (wantId != null && wantId.isNotEmpty && !_openedInitial) {
+      _openedInitial = true;
+      future
+          .then((orders) {
+            if (!mounted) return;
+            SaleOrder? found;
+            for (final o in orders) {
+              if (o.id == wantId) {
+                found = o;
+                break;
+              }
+            }
+            final order = found;
+            if (order != null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _showDetail(order);
+              });
+            }
+          })
+          .catchError((_) {});
+    }
   }
 
   @override
@@ -649,6 +679,10 @@ class _OrderRow extends StatelessWidget {
                               ),
                             ),
                           ),
+                          if (order.source != null) ...[
+                            const SizedBox(width: 6),
+                            _SourceChip(source: order.source!),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 6),
@@ -1691,6 +1725,35 @@ class _ErrorCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// Small badge showing the channel that created an order: 'web' (browser POS)
+// or 'app' (this Flutter app). Mirrors the web cashier-history badge.
+class _SourceChip extends StatelessWidget {
+  const _SourceChip({required this.source});
+
+  final String source;
+
+  @override
+  Widget build(BuildContext context) {
+    final isApp = source == 'app';
+    final color = isApp ? const Color(0xFF7C3AED) : const Color(0xFF0284C7);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        isApp ? 'App' : 'Web',
+        style: TextStyle(
+          color: color,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }

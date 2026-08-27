@@ -24,7 +24,10 @@ const Duration _kRequestTimeout = Duration(seconds: 15);
 ApiException _translateNetworkError(Object error) {
   if (error is ApiException) return error;
   if (error is SocketException) {
-    return ApiException(0, 'ບໍ່ສາມາດເຊື່ອມຕໍ່ກັບ server. ກວດເບິ່ງ URL API ຫຼື ເຄືອຂ່າຍ');
+    return ApiException(
+      0,
+      'ບໍ່ສາມາດເຊື່ອມຕໍ່ກັບ server. ກວດເບິ່ງ URL API ຫຼື ເຄືອຂ່າຍ',
+    );
   }
   if (error is TimeoutException) {
     return ApiException(0, 'ການເຊື່ອມຕໍ່ໝົດເວລາ. ກວດເບິ່ງເຄືອຂ່າຍ');
@@ -185,10 +188,7 @@ class ApiClient {
   }
 
   Future<List<TransportType>> listTransportTypes() async {
-    final res = await _get(
-      _uri('/api/transport-types'),
-      headers: _headers(),
-    );
+    final res = await _get(_uri('/api/transport-types'), headers: _headers());
     final data = _decode(res) as Map<String, dynamic>;
     return (data['items'] as List<dynamic>)
         .map((e) => TransportType.fromJson(e as Map<String, dynamic>))
@@ -199,10 +199,7 @@ class ApiClient {
     final params = <String, String>{};
     if (q != null && q.trim().isNotEmpty) params['q'] = q.trim();
     if (limit != null) params['limit'] = limit.toString();
-    final res = await _get(
-      _uri('/api/customers', params),
-      headers: _headers(),
-    );
+    final res = await _get(_uri('/api/customers', params), headers: _headers());
     final data = _decode(res) as List<dynamic>;
     return data
         .map((e) => Customer.fromJson(e as Map<String, dynamic>))
@@ -210,10 +207,7 @@ class ApiClient {
   }
 
   Future<LoyaltyConfig> getLoyaltyConfig() async {
-    final res = await _get(
-      _uri('/api/loyalty/config'),
-      headers: _headers(),
-    );
+    final res = await _get(_uri('/api/loyalty/config'), headers: _headers());
     final data = _decode(res) as Map<String, dynamic>;
     final config = data['config'];
     if (config is Map<String, dynamic>) {
@@ -314,6 +308,8 @@ class ApiClient {
               )
               .toList(),
         if (promoSelections.isNotEmpty) 'promoSelections': promoSelections,
+        // Tag the creation channel so the web/app order views can badge it.
+        'source': 'app',
       }),
     );
     return SaleOrder.fromJson(_decode(res) as Map<String, dynamic>);
@@ -330,6 +326,41 @@ class ApiClient {
       _uri('/api/me/fcm-token'),
       headers: _headers(json: true),
       body: jsonEncode({'token': token, 'platform': platform}),
+    );
+    _decode(res);
+  }
+
+  // Report this device's presence + telemetry to the monitor dashboard.
+  // Called on activity only (login, app resume, screen change) — never on a
+  // background timer. The server upserts one row per employee. All fields but
+  // `online` are optional; a lightweight ping can omit the heavier telemetry.
+  Future<void> reportPresence({
+    bool online = true,
+    String? platform,
+    String? appVersion,
+    String? deviceModel,
+    String? osVersion,
+    int? batteryPct,
+    bool? charging,
+    String? currentScreen,
+    double? lat,
+    double? lng,
+  }) async {
+    final res = await _post(
+      _uri('/api/me/presence'),
+      headers: _headers(json: true),
+      body: jsonEncode({
+        'online': online,
+        if (platform != null) 'platform': platform,
+        if (appVersion != null) 'appVersion': appVersion,
+        if (deviceModel != null) 'deviceModel': deviceModel,
+        if (osVersion != null) 'osVersion': osVersion,
+        if (batteryPct != null) 'batteryPct': batteryPct,
+        if (charging != null) 'charging': charging,
+        if (currentScreen != null) 'currentScreen': currentScreen,
+        if (lat != null) 'lat': lat,
+        if (lng != null) 'lng': lng,
+      }),
     );
     _decode(res);
   }
@@ -651,7 +682,9 @@ class ApiClient {
     debugPrint('[Promo] API Request: GET $uri headers=$hdrs');
     try {
       final res = await _get(uri, headers: hdrs);
-      debugPrint('[Promo] API Response status=${res.statusCode} body=${res.body}');
+      debugPrint(
+        '[Promo] API Response status=${res.statusCode} body=${res.body}',
+      );
       final data = _decode(res) as List<dynamic>;
       return data
           .map((e) => Promotion.fromJson(e as Map<String, dynamic>))
@@ -740,7 +773,7 @@ class ApiClient {
 
   // Team sales rankings — per-employee totals for the date range.
   Future<({List<SalespersonStats> rows, double grandTotal, int grandOrders})>
-      fetchSalespeopleReport({
+  fetchSalespeopleReport({
     required DateTime from,
     required DateTime to,
     String status = 'ACTIVE',
@@ -761,6 +794,33 @@ class ApiClient {
       rows: rows,
       grandTotal: _toDoubleOrZero(data['grandTotal']),
       grandOrders: (data['grandOrders'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Future<
+    ({
+      List<IncentiveRow> rows,
+      String currencyCode,
+      double totalSales,
+      double totalBonus,
+    })
+  >
+  fetchIncentiveReport({required int year, required int month}) async {
+    final res = await _get(
+      _uri('/api/reports/incentives', {
+        'year': year.toString(),
+        'month': month.toString(),
+      }),
+      headers: _headers(),
+    );
+    final data = _decode(res) as Map<String, dynamic>;
+    return (
+      rows: ((data['rows'] as List<dynamic>?) ?? const [])
+          .map((e) => IncentiveRow.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      currencyCode: data['currencyCode'] as String? ?? 'THB',
+      totalSales: _toDoubleOrZero(data['totalSales']),
+      totalBonus: _toDoubleOrZero(data['totalBonus']),
     );
   }
 
@@ -803,7 +863,8 @@ class ApiClient {
     final data = _decode(res);
     final list = data is List<dynamic>
         ? data
-        : ((data as Map<String, dynamic>)['items'] as List<dynamic>? ?? const []);
+        : ((data as Map<String, dynamic>)['items'] as List<dynamic>? ??
+              const []);
     return list
         .map((e) => Promotion.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -853,10 +914,7 @@ class ApiClient {
   // Wider variant of getLoyaltyConfig() — returns the full record so the
   // manager screen can show redemption settings + audit timestamps.
   Future<LoyaltyConfigManager> fetchLoyaltyConfigManager() async {
-    final res = await _get(
-      _uri('/api/loyalty/config'),
-      headers: _headers(),
-    );
+    final res = await _get(_uri('/api/loyalty/config'), headers: _headers());
     final data = _decode(res) as Map<String, dynamic>;
     final config = data['config'] as Map<String, dynamic>? ?? data;
     return LoyaltyConfigManager.fromJson(config);
@@ -889,12 +947,15 @@ class ApiClient {
   }
 
   // ── Stock refill ──
-  Future<({
-    bool canApprove,
-    bool canCreate,
-    List<StockRefillItem> items,
-    List<StockRefillRequest> requests,
-  })> fetchStockRefill({String? warehouse, String? status}) async {
+  Future<
+    ({
+      bool canApprove,
+      bool canCreate,
+      List<StockRefillItem> items,
+      List<StockRefillRequest> requests,
+    })
+  >
+  fetchStockRefill({String? warehouse, String? status}) async {
     final query = <String, String>{
       if (warehouse != null && warehouse.isNotEmpty) 'warehouse': warehouse,
       if (status != null && status.isNotEmpty) 'status': status,
@@ -975,22 +1036,17 @@ class ApiClient {
   }
 
   // ── Members ──
-  Future<List<MemberSummary>> searchMembers({
-    String? q,
-    int limit = 50,
-  }) async {
+  Future<List<MemberSummary>> searchMembers({String? q, int limit = 50}) async {
     final query = <String, String>{
       if (q != null && q.isNotEmpty) 'q': q,
       'limit': limit.toString(),
     };
-    final res = await _get(
-      _uri('/api/members', query),
-      headers: _headers(),
-    );
+    final res = await _get(_uri('/api/members', query), headers: _headers());
     final data = _decode(res);
     final list = data is List<dynamic>
         ? data
-        : ((data as Map<String, dynamic>)['items'] as List<dynamic>? ?? const []);
+        : ((data as Map<String, dynamic>)['items'] as List<dynamic>? ??
+              const []);
     return list
         .map((e) => MemberSummary.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -1000,16 +1056,17 @@ class ApiClient {
   // Returns the 4 buckets the report card needs: totals, per-currency,
   // per-salesperson, and the detail rows. Wrapped in a record so callers
   // can destructure cleanly.
-  Future<({
-    String date,
-    DailySalesTotals totals,
-    List<DailySalesCurrency> currencies,
-    List<DailySalesSalesperson> salespeople,
-    List<DailySalesRow> rows,
-  })> fetchDailySales({DateTime? date}) async {
-    final query = <String, String>{
-      if (date != null) 'date': _ymd(date),
-    };
+  Future<
+    ({
+      String date,
+      DailySalesTotals totals,
+      List<DailySalesCurrency> currencies,
+      List<DailySalesSalesperson> salespeople,
+      List<DailySalesRow> rows,
+    })
+  >
+  fetchDailySales({DateTime? date}) async {
+    final query = <String, String>{if (date != null) 'date': _ymd(date)};
     final res = await _get(
       _uri('/api/reports/daily-sales', query.isEmpty ? null : query),
       headers: _headers(),
@@ -1018,7 +1075,8 @@ class ApiClient {
     return (
       date: data['date'] as String? ?? '',
       totals: DailySalesTotals.fromJson(
-          (data['totals'] as Map<String, dynamic>?) ?? const {}),
+        (data['totals'] as Map<String, dynamic>?) ?? const {},
+      ),
       currencies: ((data['currencies'] as List<dynamic>?) ?? const [])
           .map((e) => DailySalesCurrency.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -1032,11 +1090,8 @@ class ApiClient {
   }
 
   // Item analytics — top-selling items in a date range.
-  Future<({
-    List<ItemAnalyticsRow> rows,
-    double grandTotal,
-    double grandQty,
-  })> fetchItemAnalytics({
+  Future<({List<ItemAnalyticsRow> rows, double grandTotal, double grandQty})>
+  fetchItemAnalytics({
     DateTime? from,
     DateTime? to,
     String status = 'ACTIVE',
@@ -1065,27 +1120,30 @@ class ApiClient {
   }
 
   // Daily payment settlement — per-receipt breakdown for one day.
-  Future<({
-    String date,
-    DailyPaymentTotals totals,
-    Map<String, double> breakdown,
-    List<DailyPaymentRow> rows,
-  })> fetchDailyPayments({DateTime? date}) async {
-    final query = <String, String>{
-      if (date != null) 'date': _ymd(date),
-    };
+  Future<
+    ({
+      String date,
+      DailyPaymentTotals totals,
+      Map<String, double> breakdown,
+      List<DailyPaymentRow> rows,
+    })
+  >
+  fetchDailyPayments({DateTime? date}) async {
+    final query = <String, String>{if (date != null) 'date': _ymd(date)};
     final res = await _get(
       _uri('/api/reports/daily-payments', query.isEmpty ? null : query),
       headers: _headers(),
     );
     final data = _decode(res) as Map<String, dynamic>;
-    final rawBreakdown = (data['breakdown'] as Map<String, dynamic>?) ?? const {};
+    final rawBreakdown =
+        (data['breakdown'] as Map<String, dynamic>?) ?? const {};
     final breakdown = <String, double>{};
     rawBreakdown.forEach((k, v) => breakdown[k] = _toDoubleOrZero(v));
     return (
       date: data['date'] as String? ?? '',
       totals: DailyPaymentTotals.fromJson(
-          (data['totals'] as Map<String, dynamic>?) ?? const {}),
+        (data['totals'] as Map<String, dynamic>?) ?? const {},
+      ),
       breakdown: breakdown,
       rows: ((data['rows'] as List<dynamic>?) ?? const [])
           .map((e) => DailyPaymentRow.fromJson(e as Map<String, dynamic>))

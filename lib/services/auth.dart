@@ -2,6 +2,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/models.dart';
 import 'api.dart';
 import 'notifications.dart';
+import 'presence.dart';
 
 class AuthService {
   AuthService(this.api);
@@ -26,6 +27,8 @@ class AuthService {
     // Push FCM token now that we have an auth bearer + know the user.
     // Fire-and-forget so a slow token grab doesn't block the login screen.
     NotificationService.instance.registerForUser(api);
+    // Start device-presence reporting for the monitor dashboard.
+    PresenceService.instance.start(api, screen: 'ເຂົ້າສູ່ລະບົບ');
   }
 
   Future<bool> tryRestore() async {
@@ -36,6 +39,7 @@ class AuthService {
       // Same as login — refresh device registration on app restart so a
       // rotated FCM token gets re-pushed.
       NotificationService.instance.registerForUser(api);
+      PresenceService.instance.start(api, screen: 'ກັບເຂົ້າແອັບ');
       return true;
     } on ApiException catch (e) {
       // statusCode 0 = network never reached the server. Keep the token so
@@ -54,6 +58,8 @@ class AuthService {
   Future<void> logout() async {
     // Detach this device from the user *before* clearing the auth token —
     // the DELETE endpoint needs the bearer to authenticate. Best-effort.
+    await PresenceService.instance.reportOffline();
+    PresenceService.instance.stop();
     await NotificationService.instance.unregister(api);
     api.token = null;
     employee = null;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../app_theme.dart';
+import '../services/presence.dart';
 import 'inventory_screen.dart';
 import 'my_dashboard_screen.dart';
 import 'orders_screen.dart';
@@ -61,8 +62,19 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    // Report the landing tab so the monitor shows where the user starts.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      PresenceService.instance.setScreen(_tabs[_index].title);
+    });
+  }
+
   void _onTab(int i) {
     setState(() => _index = i);
+    // Switching tabs is activity — surface the new screen on the monitor.
+    PresenceService.instance.setScreen(_tabs[i].title);
   }
 
   PreferredSizeWidget _appBar(String title) {
@@ -158,31 +170,43 @@ class _HomeBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).padding.bottom;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        border: Border(top: BorderSide(color: AppColors.border, width: 1)),
-      ),
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(kSpace3, kSpace2, kSpace3, bottomInset),
-        child: SizedBox(
-          height: 56,
-          child: Row(
-            children: [
-              for (var i = 0; i < items.length; i++)
-                Expanded(
-                  child: _BottomNavItem(
-                    icon: items[i].icon,
-                    activeIcon: items[i].activeIcon,
-                    label: items[i].label,
-                    selected: i == index,
-                    onTap: () => onTap(i),
-                  ),
-                ),
-            ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 360;
+        final itemHeight = compact ? 52.0 : 56.0;
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppColors.cardBg,
+            border: Border(top: BorderSide(color: AppColors.border, width: 1)),
           ),
-        ),
-      ),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              compact ? kSpace2 : kSpace3,
+              kSpace2,
+              compact ? kSpace2 : kSpace3,
+              bottomInset,
+            ),
+            child: SizedBox(
+              height: itemHeight,
+              child: Row(
+                children: [
+                  for (var i = 0; i < items.length; i++)
+                    Expanded(
+                      child: _BottomNavItem(
+                        icon: items[i].icon,
+                        activeIcon: items[i].activeIcon,
+                        label: items[i].label,
+                        selected: i == index,
+                        compact: compact,
+                        onTap: () => onTap(i),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -193,6 +217,7 @@ class _BottomNavItem extends StatelessWidget {
     required this.activeIcon,
     required this.label,
     required this.selected,
+    required this.compact,
     required this.onTap,
   });
 
@@ -200,6 +225,7 @@ class _BottomNavItem extends StatelessWidget {
   final IconData activeIcon;
   final String label;
   final bool selected;
+  final bool compact;
   final VoidCallback onTap;
 
   @override
@@ -226,15 +252,19 @@ class _BottomNavItem extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(selected ? activeIcon : icon, color: color, size: 21),
-                const SizedBox(height: 3),
+                Icon(
+                  selected ? activeIcon : icon,
+                  color: color,
+                  size: compact ? 19 : 21,
+                ),
+                SizedBox(height: compact ? 2 : 3),
                 Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: color,
-                    fontSize: 11,
+                    fontSize: compact ? 10 : 11,
                     fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
                     height: 1.1,
                   ),

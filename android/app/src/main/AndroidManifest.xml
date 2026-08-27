@@ -3,6 +3,10 @@
     <uses-permission android:name="android.permission.CAMERA"/>
     <!-- Android 13+ requires runtime permission to show notifications. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Foreground location for the sales-device monitor (services/presence.dart).
+         When-in-use only — no background location is requested. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <application
         android:label="odg_sale_app"

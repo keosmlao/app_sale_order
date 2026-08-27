@@ -26,6 +26,13 @@ class ManagerHubScreen extends StatelessWidget {
       disabled: false,
     ),
     _Feature(
+      icon: Icons.workspace_premium_rounded,
+      title: 'ໂບນັດພະນັກງານຂາຍ',
+      subtitle: 'ຄຳນວນຈາກຍອດຂາຍໃນ Database',
+      route: 'incentives',
+      accent: AppColors.success,
+    ),
+    _Feature(
       icon: Icons.point_of_sale_rounded,
       title: 'ກິດຈະກຳ Cashier',
       subtitle: 'ຍອດຮັບເງິນລາຍຄົນ',
@@ -109,6 +116,9 @@ class ManagerHubScreen extends StatelessWidget {
       case 'team':
         page = const TeamRankingsScreen();
         break;
+      case 'incentives':
+        page = const IncentiveReportScreen();
+        break;
       case 'cashier':
         page = const CashierActivityScreen();
         break;
@@ -159,14 +169,15 @@ class ManagerHubScreen extends StatelessWidget {
           maxWidth: 720,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(
-                kSpace4, kSpace3, kSpace4, kSpace8),
+              kSpace4,
+              kSpace3,
+              kSpace4,
+              kSpace8,
+            ),
             children: [
               FadeInSlide(
                 child: HeroPanel(
-                  colors: const [
-                    AppColors.primaryDark,
-                    AppColors.primary,
-                  ],
+                  colors: const [AppColors.primaryDark, AppColors.primary],
                   child: Row(
                     children: [
                       Container(
@@ -216,8 +227,7 @@ class ManagerHubScreen extends StatelessWidget {
               GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
                   crossAxisSpacing: kSpace3,
                   mainAxisSpacing: kSpace3,
@@ -229,7 +239,9 @@ class ManagerHubScreen extends StatelessWidget {
                   return FadeInSlide(
                     delay: Duration(milliseconds: 80 + i * 40),
                     child: _FeatureTile(
-                        feature: f, onTap: () => _open(context, f)),
+                      feature: f,
+                      onTap: () => _open(context, f),
+                    ),
                   );
                 },
               ),
@@ -352,8 +364,11 @@ class _DateRangeBar extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(Icons.event_outlined,
-                size: 18, color: AppColors.textSecondary),
+            Icon(
+              Icons.event_outlined,
+              size: 18,
+              color: AppColors.textSecondary,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -365,8 +380,7 @@ class _DateRangeBar extends StatelessWidget {
                 ),
               ),
             ),
-            Icon(Icons.chevron_right,
-                size: 20, color: AppColors.textMuted),
+            Icon(Icons.chevron_right, size: 20, color: AppColors.textMuted),
           ],
         ),
       ),
@@ -378,11 +392,11 @@ class _DateRangeBar extends StatelessWidget {
 // async wrapping consistent.
 class _StateView extends StatelessWidget {
   const _StateView.empty({this.message})
-      : icon = Icons.inbox_outlined,
-        isError = false;
+    : icon = Icons.inbox_outlined,
+      isError = false;
   const _StateView.error(this.message)
-      : icon = Icons.cloud_off_outlined,
-        isError = true;
+    : icon = Icons.cloud_off_outlined,
+      isError = true;
   final IconData icon;
   final String? message;
   final bool isError;
@@ -429,6 +443,214 @@ class _StateView extends StatelessWidget {
 // 1) Team rankings — /api/reports/salespeople
 // ─────────────────────────────────────────────────────────────────────────
 
+class IncentiveReportScreen extends StatefulWidget {
+  const IncentiveReportScreen({super.key});
+
+  @override
+  State<IncentiveReportScreen> createState() => _IncentiveReportScreenState();
+}
+
+class _IncentiveReportScreenState extends State<IncentiveReportScreen> {
+  late DateTime _period;
+  Future<
+    ({
+      List<IncentiveRow> rows,
+      String currencyCode,
+      double totalSales,
+      double totalBonus,
+    })
+  >?
+  _future;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _period = DateTime(now.year, now.month);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _future ??= _load();
+  }
+
+  Future<
+    ({
+      List<IncentiveRow> rows,
+      String currencyCode,
+      double totalSales,
+      double totalBonus,
+    })
+  >
+  _load() {
+    return AppScope.of(
+      context,
+    ).api.fetchIncentiveReport(year: _period.year, month: _period.month);
+  }
+
+  void _moveMonth(int delta) {
+    setState(() {
+      _period = DateTime(_period.year, _period.month + delta);
+      _future = _load();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final money = NumberFormat('#,##0.##');
+    return Scaffold(
+      appBar: AppBar(title: const Text('ໂບນັດພະນັກງານຂາຍ')),
+      body:
+          FutureBuilder<
+            ({
+              List<IncentiveRow> rows,
+              String currencyCode,
+              double totalSales,
+              double totalBonus,
+            })
+          >(
+            future: _future,
+            builder: (context, snap) {
+              return RefreshIndicator(
+                onRefresh: () async {
+                  setState(() => _future = _load());
+                  await _future;
+                },
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+                  children: [
+                    Row(
+                      children: [
+                        IconButton(
+                          onPressed: () => _moveMonth(-1),
+                          icon: const Icon(Icons.chevron_left),
+                        ),
+                        Expanded(
+                          child: Text(
+                            DateFormat('MM/yyyy').format(_period),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => _moveMonth(1),
+                          icon: const Icon(Icons.chevron_right),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    if (snap.connectionState != ConnectionState.done)
+                      const SkeletonListPlaceholder()
+                    else if (snap.hasError)
+                      _StateView.error(snap.error.toString())
+                    else if (snap.data!.rows.isEmpty)
+                      const _StateView.empty(message: 'ບໍ່ມີຍອດຂາຍໃນເດືອນນີ້')
+                    else ...[
+                      GradientHero(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _HeroStatColumn(
+                                label: 'ຍອດຂາຍ',
+                                value: money.format(snap.data!.totalSales),
+                              ),
+                            ),
+                            Container(
+                              width: 1,
+                              height: 38,
+                              color: Colors.white.withValues(alpha: .3),
+                            ),
+                            Expanded(
+                              child: _HeroStatColumn(
+                                label: 'ໂບນັດຄາດຄະເນ',
+                                value: money.format(snap.data!.totalBonus),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      for (final row in snap.data!.rows) ...[
+                        SurfaceCard(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      row.displayName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    row.groupCode == 'AIR' ? 'AIR' : 'CE + SDA',
+                                    style: const TextStyle(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              LinearProgressIndicator(
+                                value: row.achievementPct.clamp(0, 1),
+                                minHeight: 7,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'ຍອດ ${money.format(row.salesAmount)} / ເປົ້າ ${money.format(row.targetPerPerson)} ${snap.data!.currencyCode}',
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${(row.achievementPct * 100).toStringAsFixed(1)}% · ${row.soldQty.toStringAsFixed(0)} ຊິ້ນ · ×${row.multiplier.toStringAsFixed(1)}',
+                                style: TextStyle(color: AppColors.textMuted),
+                              ),
+                              const Divider(height: 20),
+                              Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      'ໂບນັດສຸດທິ',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    '${money.format(row.netBonus)} ${snap.data!.currencyCode}',
+                                    style: const TextStyle(
+                                      color: AppColors.success,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ],
+                  ],
+                ),
+              );
+            },
+          ),
+    );
+  }
+}
+
 class TeamRankingsScreen extends StatefulWidget {
   const TeamRankingsScreen({super.key});
   @override
@@ -440,7 +662,7 @@ class _TeamRankingsScreenState extends State<TeamRankingsScreen> {
   late DateTime _from;
   late DateTime _to;
   Future<({List<SalespersonStats> rows, double grandTotal, int grandOrders})>?
-      _future;
+  _future;
 
   @override
   void initState() {
@@ -457,10 +679,10 @@ class _TeamRankingsScreenState extends State<TeamRankingsScreen> {
   }
 
   Future<({List<SalespersonStats> rows, double grandTotal, int grandOrders})>
-      _load() {
-    return AppScope.of(context)
-        .api
-        .fetchSalespeopleReport(from: _from, to: _to);
+  _load() {
+    return AppScope.of(
+      context,
+    ).api.fetchSalespeopleReport(from: _from, to: _to);
   }
 
   void _refresh() => setState(() => _future = _load());
@@ -484,61 +706,73 @@ class _TeamRankingsScreenState extends State<TeamRankingsScreen> {
             ),
           ),
           Expanded(
-            child: FutureBuilder<
-                ({List<SalespersonStats> rows, double grandTotal, int grandOrders})>(
-              future: _future,
-              builder: (context, snap) {
-                if (snap.connectionState != ConnectionState.done) {
-                  return const SkeletonListPlaceholder();
-                }
-                if (snap.hasError) {
-                  return _StateView.error(snap.error.toString());
-                }
-                final data = snap.data!;
-                if (data.rows.isEmpty) {
-                  return const _StateView.empty();
-                }
-                return RefreshIndicator(
-                  onRefresh: () async {
-                    _refresh();
-                    await _future;
-                  },
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                    children: [
-                      GradientHero(
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: _HeroStatColumn(
-                                label: 'ຍອດລວມທີມ',
-                                value: '${_fmt.format(data.grandTotal)} ກີບ',
-                              ),
+            child:
+                FutureBuilder<
+                  ({
+                    List<SalespersonStats> rows,
+                    double grandTotal,
+                    int grandOrders,
+                  })
+                >(
+                  future: _future,
+                  builder: (context, snap) {
+                    if (snap.connectionState != ConnectionState.done) {
+                      return const SkeletonListPlaceholder();
+                    }
+                    if (snap.hasError) {
+                      return _StateView.error(snap.error.toString());
+                    }
+                    final data = snap.data!;
+                    if (data.rows.isEmpty) {
+                      return const _StateView.empty();
+                    }
+                    return RefreshIndicator(
+                      onRefresh: () async {
+                        _refresh();
+                        await _future;
+                      },
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                        children: [
+                          GradientHero(
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: _HeroStatColumn(
+                                    label: 'ຍອດລວມທີມ',
+                                    value:
+                                        '${_fmt.format(data.grandTotal)} ກີບ',
+                                  ),
+                                ),
+                                Container(
+                                  width: 1,
+                                  height: 36,
+                                  color: Colors.white.withValues(alpha: 0.3),
+                                ),
+                                Expanded(
+                                  child: _HeroStatColumn(
+                                    label: 'ບິນທີມ',
+                                    value:
+                                        '${_fmt.format(data.grandOrders)} ບິນ',
+                                  ),
+                                ),
+                              ],
                             ),
-                            Container(
-                              width: 1,
-                              height: 36,
-                              color: Colors.white.withValues(alpha: 0.3),
-                            ),
-                            Expanded(
-                              child: _HeroStatColumn(
-                                label: 'ບິນທີມ',
-                                value: '${_fmt.format(data.grandOrders)} ບິນ',
-                              ),
+                          ),
+                          const SizedBox(height: 14),
+                          for (var i = 0; i < data.rows.length; i++) ...[
+                            if (i > 0) const SizedBox(height: 8),
+                            _SalespersonRow(
+                              rank: i + 1,
+                              row: data.rows[i],
+                              fmt: _fmt,
                             ),
                           ],
-                        ),
+                        ],
                       ),
-                      const SizedBox(height: 14),
-                      for (var i = 0; i < data.rows.length; i++) ...[
-                        if (i > 0) const SizedBox(height: 8),
-                        _SalespersonRow(rank: i + 1, row: data.rows[i], fmt: _fmt),
-                      ],
-                    ],
-                  ),
-                );
-              },
-            ),
+                    );
+                  },
+                ),
           ),
         ],
       ),
@@ -742,7 +976,8 @@ class _CashierActivityScreenState extends State<CashierActivityScreen> {
                 if (snap.connectionState != ConnectionState.done) {
                   return const SkeletonListPlaceholder();
                 }
-                if (snap.hasError) return _StateView.error(snap.error.toString());
+                if (snap.hasError)
+                  return _StateView.error(snap.error.toString());
                 final rows = snap.data ?? const [];
                 if (rows.isEmpty) return const _StateView.empty();
                 return RefreshIndicator(
@@ -764,15 +999,16 @@ class _CashierActivityScreenState extends State<CashierActivityScreen> {
                               ),
                             ),
                             Container(
-                                width: 1,
-                                height: 36,
-                                color:
-                                    Colors.white.withValues(alpha: 0.3)),
+                              width: 1,
+                              height: 36,
+                              color: Colors.white.withValues(alpha: 0.3),
+                            ),
                             Expanded(
                               child: _HeroStatColumn(
                                 label: 'ຈຳນວນບິນ',
-                                value: _fmt.format(rows.fold<int>(
-                                    0, (s, r) => s + r.billCount)),
+                                value: _fmt.format(
+                                  rows.fold<int>(0, (s, r) => s + r.billCount),
+                                ),
                               ),
                             ),
                           ],
@@ -959,7 +1195,8 @@ class _PromoEffectivenessScreenState extends State<PromoEffectivenessScreen> {
                 if (snap.connectionState != ConnectionState.done) {
                   return const SkeletonListPlaceholder();
                 }
-                if (snap.hasError) return _StateView.error(snap.error.toString());
+                if (snap.hasError)
+                  return _StateView.error(snap.error.toString());
                 final rows = snap.data ?? const [];
                 if (rows.isEmpty) return const _StateView.empty();
                 final activeCount = rows.where((r) => r.isActive).length;
@@ -981,10 +1218,10 @@ class _PromoEffectivenessScreenState extends State<PromoEffectivenessScreen> {
                               ),
                             ),
                             Container(
-                                width: 1,
-                                height: 36,
-                                color:
-                                    Colors.white.withValues(alpha: 0.3)),
+                              width: 1,
+                              height: 36,
+                              color: Colors.white.withValues(alpha: 0.3),
+                            ),
                             Expanded(
                               child: _HeroStatColumn(
                                 label: 'ກຳລັງເປີດ',
@@ -1001,121 +1238,125 @@ class _PromoEffectivenessScreenState extends State<PromoEffectivenessScreen> {
                           builder: (_) {
                             final r = rows[i];
                             return Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: posCardDecoration(radius: kRadiusMd),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                              padding: const EdgeInsets.all(14),
+                              decoration: posCardDecoration(radius: kRadiusMd),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
                                     children: [
-                                      Text(
-                                        r.promoName,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: AppColors.textPrimary,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 14,
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              r.promoName,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: AppColors.textPrimary,
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '${r.promoType ?? '—'} · ${r.billCount} ບິນ · ${r.lineCount} ລາຍການ',
+                                              style: TextStyle(
+                                                color: AppColors.textMuted,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '${r.promoType ?? '—'} · ${r.billCount} ບິນ · ${r.lineCount} ລາຍການ',
-                                        style: TextStyle(
-                                          color: AppColors.textMuted,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w500,
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color:
+                                              (r.isActive
+                                                      ? AppColors.success
+                                                      : AppColors.textMuted)
+                                                  .withValues(alpha: 0.10),
+                                          borderRadius: BorderRadius.circular(
+                                            kRadiusXl,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          r.isActive ? 'ເປີດ' : 'ປິດ',
+                                          style: TextStyle(
+                                            color: r.isActive
+                                                ? AppColors.success
+                                                : AppColors.textMuted,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                         ),
                                       ),
                                     ],
                                   ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: (r.isActive
-                                            ? AppColors.success
-                                            : AppColors.textMuted)
-                                        .withValues(alpha: 0.10),
-                                    borderRadius: BorderRadius.circular(
-                                        kRadiusXl),
-                                  ),
-                                  child: Text(
-                                    r.isActive ? 'ເປີດ' : 'ປິດ',
-                                    style: TextStyle(
-                                      color: r.isActive
-                                          ? AppColors.success
-                                          : AppColors.textMuted,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Divider(height: 1, color: AppColors.divider),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                  const SizedBox(height: 10),
+                                  Divider(height: 1, color: AppColors.divider),
+                                  const SizedBox(height: 10),
+                                  Row(
                                     children: [
-                                      Text(
-                                        'ສ່ວນຫຼຸດທີ່ໃຫ້',
-                                        style: TextStyle(
-                                          color: AppColors.textMuted,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w500,
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'ສ່ວນຫຼຸດທີ່ໃຫ້',
+                                              style: TextStyle(
+                                                color: AppColors.textMuted,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            Text(
+                                              '${_fmt.format(r.totalDiscountKip)} ກີບ',
+                                              style: TextStyle(
+                                                color: AppColors.danger,
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                      Text(
-                                        '${_fmt.format(r.totalDiscountKip)} ກີບ',
-                                        style: TextStyle(
-                                          color: AppColors.danger,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 14,
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'ຍອດທີ່ສ້າງ',
+                                              style: TextStyle(
+                                                color: AppColors.textMuted,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            Text(
+                                              '${_fmt.format(r.totalKip)} ກີບ',
+                                              style: TextStyle(
+                                                color: AppColors.success,
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ],
                                   ),
-                                ),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'ຍອດທີ່ສ້າງ',
-                                        style: TextStyle(
-                                          color: AppColors.textMuted,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      Text(
-                                        '${_fmt.format(r.totalKip)} ກີບ',
-                                        style: TextStyle(
-                                          color: AppColors.success,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+                                ],
+                              ),
                             );
                           },
                         ),
@@ -1144,8 +1385,7 @@ class PromotionManagementScreen extends StatefulWidget {
       _PromotionManagementScreenState();
 }
 
-class _PromotionManagementScreenState
-    extends State<PromotionManagementScreen> {
+class _PromotionManagementScreenState extends State<PromotionManagementScreen> {
   Future<List<Promotion>>? _future;
   String? _busyId;
 
@@ -1155,24 +1395,22 @@ class _PromotionManagementScreenState
     _future ??= _load();
   }
 
-  Future<List<Promotion>> _load() =>
-      AppScope.of(context).api.listPromotions();
+  Future<List<Promotion>> _load() => AppScope.of(context).api.listPromotions();
 
   void _refresh() => setState(() => _future = _load());
 
   Future<void> _toggle(Promotion p) async {
     setState(() => _busyId = p.id);
     try {
-      await AppScope.of(context).api.updatePromotion(
-        p.id,
-        {'isActive': !p.isActive},
-      );
+      await AppScope.of(
+        context,
+      ).api.updatePromotion(p.id, {'isActive': !p.isActive});
       _refresh();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('ປ່ຽນບໍ່ສຳເລັດ: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('ປ່ຽນບໍ່ສຳເລັດ: $e')));
     } finally {
       if (mounted) setState(() => _busyId = null);
     }
@@ -1210,9 +1448,10 @@ class _PromotionManagementScreenState
                         ),
                       ),
                       Container(
-                          width: 1,
-                          height: 36,
-                          color: Colors.white.withValues(alpha: 0.3)),
+                        width: 1,
+                        height: 36,
+                        color: Colors.white.withValues(alpha: 0.3),
+                      ),
                       Expanded(
                         child: _HeroStatColumn(
                           label: 'ກຳລັງເປີດ',
@@ -1225,75 +1464,79 @@ class _PromotionManagementScreenState
                 const SizedBox(height: 14),
                 for (var i = 0; i < rows.length; i++) ...[
                   if (i > 0) const SizedBox(height: 8),
-                  Builder(builder: (_) {
-                    final p = rows[i];
-                    final busy = _busyId == p.id;
-                    return Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: posCardDecoration(radius: kRadiusMd),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                  Builder(
+                    builder: (_) {
+                      final p = rows[i];
+                      final busy = _busyId == p.id;
+                      return Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: posCardDecoration(radius: kRadiusMd),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
                               children: [
-                                Text(
-                                  p.name,
-                                  style: TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        p.name,
+                                        style: TextStyle(
+                                          color: AppColors.textPrimary,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        p.promoType,
+                                        style: TextStyle(
+                                          color: AppColors.textMuted,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  p.promoType,
-                                  style: TextStyle(
-                                    color: AppColors.textMuted,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
+                                if (busy)
+                                  const SizedBox(
+                                    width: 32,
+                                    height: 32,
+                                    child: Center(
+                                      child: SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  Switch(
+                                    value: p.isActive,
+                                    onChanged: (_) => _toggle(p),
                                   ),
-                                ),
                               ],
                             ),
-                          ),
-                          if (busy)
-                            const SizedBox(
-                              width: 32,
-                              height: 32,
-                              child: Center(
-                                child: SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
+                            if (p.note != null && p.note!.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                p.note!,
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
                                 ),
                               ),
-                            )
-                          else
-                            Switch(
-                              value: p.isActive,
-                              onChanged: (_) => _toggle(p),
-                            ),
-                        ],
-                      ),
-                      if (p.note != null && p.note!.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          p.note!,
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 12,
-                          ),
+                            ],
+                          ],
                         ),
-                      ],
-                    ],
+                      );
+                    },
                   ),
-                );
-                  }),
                 ],
               ],
             ),
@@ -1362,21 +1605,22 @@ class _LoyaltyConfigScreenState extends State<LoyaltyConfigScreen> {
     setState(() => _saving = true);
     try {
       await AppScope.of(context).api.updateLoyaltyConfig(
-            earnKipPerPoint: double.tryParse(_earnCtl.text),
-            redeemPointsPerKip: double.tryParse(_redeemCtl.text),
-            minRedeemPoints: int.tryParse(_minRedeemCtl.text),
-            pointName: _pointNameCtl.text.trim(),
-            note: _noteCtl.text.trim(),
-            isActive: _isActive,
-          );
+        earnKipPerPoint: double.tryParse(_earnCtl.text),
+        redeemPointsPerKip: double.tryParse(_redeemCtl.text),
+        minRedeemPoints: int.tryParse(_minRedeemCtl.text),
+        pointName: _pointNameCtl.text.trim(),
+        note: _noteCtl.text.trim(),
+        isActive: _isActive,
+      );
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('ບັນທຶກສຳເລັດ')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('ບັນທຶກສຳເລັດ')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('ບັນທຶກບໍ່ສຳເລັດ: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('ບັນທຶກບໍ່ສຳເລັດ: $e')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1389,83 +1633,83 @@ class _LoyaltyConfigScreenState extends State<LoyaltyConfigScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? _StateView.error(_error)
-              : SafeArea(
-                  child: TabletConstrain(
-                    maxWidth: 520,
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-                      children: [
-                        SwitchListTile(
-                          value: _isActive,
-                          onChanged: (v) => setState(() => _isActive = v),
-                          title: const Text('ເປີດໃຊ້ Loyalty'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _earnCtl,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'ກີບຕໍ່ 1 ຄະແນນ (ຄິດໄດ້)',
-                            prefixIcon: Icon(Icons.trending_up),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _redeemCtl,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'ຄະແນນຕໍ່ 1 ກີບ (ແລກໄດ້)',
-                            prefixIcon: Icon(Icons.swap_horiz),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _minRedeemCtl,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'ຄະແນນຕ່ຳສຸດເພື່ອແລກ',
-                            prefixIcon: Icon(Icons.vertical_align_bottom),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _pointNameCtl,
-                          decoration: const InputDecoration(
-                            labelText: 'ຊື່ຄະແນນ',
-                            hintText: 'ແຕ້ມສະສົມ',
-                            prefixIcon: Icon(Icons.label_outline),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _noteCtl,
-                          maxLines: 3,
-                          decoration: const InputDecoration(
-                            labelText: 'ໝາຍເຫດ',
-                            alignLabelWithHint: true,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        FilledButton.icon(
-                          onPressed: _saving ? null : _save,
-                          icon: _saving
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : Icon(Icons.save_outlined),
-                          label: const Text('ບັນທຶກ'),
-                        ),
-                      ],
+          ? _StateView.error(_error)
+          : SafeArea(
+              child: TabletConstrain(
+                maxWidth: 520,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+                  children: [
+                    SwitchListTile(
+                      value: _isActive,
+                      onChanged: (v) => setState(() => _isActive = v),
+                      title: const Text('ເປີດໃຊ້ Loyalty'),
+                      contentPadding: EdgeInsets.zero,
                     ),
-                  ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _earnCtl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'ກີບຕໍ່ 1 ຄະແນນ (ຄິດໄດ້)',
+                        prefixIcon: Icon(Icons.trending_up),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _redeemCtl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'ຄະແນນຕໍ່ 1 ກີບ (ແລກໄດ້)',
+                        prefixIcon: Icon(Icons.swap_horiz),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _minRedeemCtl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'ຄະແນນຕ່ຳສຸດເພື່ອແລກ',
+                        prefixIcon: Icon(Icons.vertical_align_bottom),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _pointNameCtl,
+                      decoration: const InputDecoration(
+                        labelText: 'ຊື່ຄະແນນ',
+                        hintText: 'ແຕ້ມສະສົມ',
+                        prefixIcon: Icon(Icons.label_outline),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _noteCtl,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'ໝາຍເຫດ',
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton.icon(
+                      onPressed: _saving ? null : _save,
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Icon(Icons.save_outlined),
+                      label: const Text('ບັນທຶກ'),
+                    ),
+                  ],
                 ),
+              ),
+            ),
     );
   }
 }
@@ -1481,12 +1725,15 @@ class StockRefillScreen extends StatefulWidget {
 }
 
 class _StockRefillScreenState extends State<StockRefillScreen> {
-  Future<({
-    bool canApprove,
-    bool canCreate,
-    List<StockRefillItem> items,
-    List<StockRefillRequest> requests,
-  })>? _future;
+  Future<
+    ({
+      bool canApprove,
+      bool canCreate,
+      List<StockRefillItem> items,
+      List<StockRefillRequest> requests,
+    })
+  >?
+  _future;
   final _fmt = NumberFormat('#,###.##', 'en_US');
   String? _busyId;
 
@@ -1496,12 +1743,15 @@ class _StockRefillScreenState extends State<StockRefillScreen> {
     _future ??= _load();
   }
 
-  Future<({
-    bool canApprove,
-    bool canCreate,
-    List<StockRefillItem> items,
-    List<StockRefillRequest> requests,
-  })> _load() => AppScope.of(context).api.fetchStockRefill();
+  Future<
+    ({
+      bool canApprove,
+      bool canCreate,
+      List<StockRefillItem> items,
+      List<StockRefillRequest> requests,
+    })
+  >
+  _load() => AppScope.of(context).api.fetchStockRefill();
 
   void _refresh() => setState(() => _future = _load());
 
@@ -1512,9 +1762,9 @@ class _StockRefillScreenState extends State<StockRefillScreen> {
       _refresh();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('ປະຕິບັດບໍ່ສຳເລັດ: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('ປະຕິບັດບໍ່ສຳເລັດ: $e')));
     } finally {
       if (mounted) setState(() => _busyId = null);
     }
@@ -1567,12 +1817,16 @@ class _StockRefillScreenState extends State<StockRefillScreen> {
                                 ),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 3),
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: AppColors.warning
-                                        .withValues(alpha: 0.10),
-                                    borderRadius:
-                                        BorderRadius.circular(kRadiusXl),
+                                    color: AppColors.warning.withValues(
+                                      alpha: 0.10,
+                                    ),
+                                    borderRadius: BorderRadius.circular(
+                                      kRadiusXl,
+                                    ),
                                   ),
                                   child: Text(
                                     r.status,
@@ -1604,8 +1858,7 @@ class _StockRefillScreenState extends State<StockRefillScreen> {
                                 ),
                               ),
                             ],
-                            if (data.canApprove &&
-                                r.status == 'pending') ...[
+                            if (data.canApprove && r.status == 'pending') ...[
                               const SizedBox(height: 12),
                               Row(
                                 children: [
@@ -1765,8 +2018,9 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
           if (snap.hasError) return _StateView.error(snap.error.toString());
           final rows = snap.data ?? const [];
           if (rows.isEmpty) return const _StateView.empty();
-          final managerCount =
-              rows.where((e) => e.appRole == AppRole.manager).length;
+          final managerCount = rows
+              .where((e) => e.appRole == AppRole.manager)
+              .length;
           return Column(
             children: [
               Padding(
@@ -1781,9 +2035,10 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
                         ),
                       ),
                       Container(
-                          width: 1,
-                          height: 36,
-                          color: Colors.white.withValues(alpha: 0.3)),
+                        width: 1,
+                        height: 36,
+                        color: Colors.white.withValues(alpha: 0.3),
+                      ),
                       Expanded(
                         child: _HeroStatColumn(
                           label: 'Manager',
@@ -1801,79 +2056,82 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (_, i) {
                     final e = rows[i];
-                    final name = e.nickname ??
+                    final name =
+                        e.nickname ??
                         e.fullnameLo ??
                         e.fullnameEn ??
                         e.employeeCode ??
                         '—';
-              return Container(
-                padding: const EdgeInsets.all(14),
-                decoration: posCardDecoration(radius: kRadiusMd),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: AppColors.cardElev,
-                        borderRadius: BorderRadius.circular(kRadiusMd),
-                      ),
-                      child: Text(
-                        name.isNotEmpty ? name[0].toUpperCase() : '?',
-                        style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    return Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: posCardDecoration(radius: kRadiusMd),
+                      child: Row(
                         children: [
-                          Text(
-                            name,
-                            style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
+                          Container(
+                            width: 40,
+                            height: 40,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: AppColors.cardElev,
+                              borderRadius: BorderRadius.circular(kRadiusMd),
+                            ),
+                            child: Text(
+                              name.isNotEmpty ? name[0].toUpperCase() : '?',
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
                             ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${e.employeeCode ?? '—'} · ${e.positionCode ?? ''}',
-                            style: TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  style: TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${e.employeeCode ?? '—'} · ${e.positionCode ?? ''}',
+                                  style: TextStyle(
+                                    color: AppColors.textMuted,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
+                          if (e.appRole == AppRole.manager)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary50,
+                                borderRadius: BorderRadius.circular(kRadiusXl),
+                              ),
+                              child: const Text(
+                                'manager',
+                                style: TextStyle(
+                                  color: AppColors.primary,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
                         ],
                       ),
-                    ),
-                    if (e.appRole == AppRole.manager)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary50,
-                          borderRadius: BorderRadius.circular(kRadiusXl),
-                        ),
-                        child: const Text(
-                          'manager',
-                          style: TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            },
+                    );
+                  },
                 ),
               ),
             ],
@@ -1925,13 +2183,13 @@ class _ApproverManagementScreenState extends State<ApproverManagementScreen> {
               .where((e) => e.appRole == AppRole.head)
               .toList();
           if (heads.isEmpty) {
-            return const _StateView.empty(
-              message: 'ບໍ່ມີຫົວໜ້າໜ່ວຍງານໃນລະບົບ',
-            );
+            return const _StateView.empty(message: 'ບໍ່ມີຫົວໜ້າໜ່ວຍງານໃນລະບົບ');
           }
           final delegatedCount = heads
-              .where((e) =>
-                  ApproverDelegationService.isDelegated(e.employeeCode ?? ''))
+              .where(
+                (e) =>
+                    ApproverDelegationService.isDelegated(e.employeeCode ?? ''),
+              )
               .length;
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -1946,9 +2204,10 @@ class _ApproverManagementScreenState extends State<ApproverManagementScreen> {
                       ),
                     ),
                     Container(
-                        width: 1,
-                        height: 36,
-                        color: Colors.white.withValues(alpha: 0.3)),
+                      width: 1,
+                      height: 36,
+                      color: Colors.white.withValues(alpha: 0.3),
+                    ),
                     Expanded(
                       child: _HeroStatColumn(
                         label: 'ມອບສິດແລ້ວ',
@@ -2058,9 +2317,7 @@ class _InfoBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.primary50,
         borderRadius: BorderRadius.circular(kRadiusMd),
-        border: Border.all(
-          color: AppColors.primary.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2129,9 +2386,11 @@ class _MemberListScreenState extends State<MemberListScreen> {
               padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
               child: Row(
                 children: [
-                  Icon(Icons.contacts_outlined,
-                      size: 18,
-                      color: Colors.white.withValues(alpha: 0.95)),
+                  Icon(
+                    Icons.contacts_outlined,
+                    size: 18,
+                    color: Colors.white.withValues(alpha: 0.95),
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: TextField(
@@ -2160,9 +2419,11 @@ class _MemberListScreenState extends State<MemberListScreen> {
                   ),
                   if (_searchCtl.text.isNotEmpty)
                     IconButton(
-                      icon: Icon(Icons.close,
-                          color: Colors.white.withValues(alpha: 0.9),
-                          size: 18),
+                      icon: Icon(
+                        Icons.close,
+                        color: Colors.white.withValues(alpha: 0.9),
+                        size: 18,
+                      ),
                       onPressed: () {
                         _searchCtl.clear();
                         _search('');
@@ -2179,7 +2440,8 @@ class _MemberListScreenState extends State<MemberListScreen> {
                 if (snap.connectionState != ConnectionState.done) {
                   return const SkeletonListPlaceholder();
                 }
-                if (snap.hasError) return _StateView.error(snap.error.toString());
+                if (snap.hasError)
+                  return _StateView.error(snap.error.toString());
                 final rows = snap.data ?? const [];
                 if (rows.isEmpty) return const _StateView.empty();
                 return ListView.separated(
@@ -2265,13 +2527,16 @@ class DailySalesScreen extends StatefulWidget {
 class _DailySalesScreenState extends State<DailySalesScreen> {
   final _fmt = NumberFormat('#,###', 'en_US');
   late DateTime _date;
-  Future<({
-    String date,
-    DailySalesTotals totals,
-    List<DailySalesCurrency> currencies,
-    List<DailySalesSalesperson> salespeople,
-    List<DailySalesRow> rows,
-  })>? _future;
+  Future<
+    ({
+      String date,
+      DailySalesTotals totals,
+      List<DailySalesCurrency> currencies,
+      List<DailySalesSalesperson> salespeople,
+      List<DailySalesRow> rows,
+    })
+  >?
+  _future;
 
   @override
   void initState() {
@@ -2286,14 +2551,16 @@ class _DailySalesScreenState extends State<DailySalesScreen> {
     _future ??= _load();
   }
 
-  Future<({
-    String date,
-    DailySalesTotals totals,
-    List<DailySalesCurrency> currencies,
-    List<DailySalesSalesperson> salespeople,
-    List<DailySalesRow> rows,
-  })> _load() =>
-      AppScope.of(context).api.fetchDailySales(date: _date);
+  Future<
+    ({
+      String date,
+      DailySalesTotals totals,
+      List<DailySalesCurrency> currencies,
+      List<DailySalesSalesperson> salespeople,
+      List<DailySalesRow> rows,
+    })
+  >
+  _load() => AppScope.of(context).api.fetchDailySales(date: _date);
 
   void _refresh() => setState(() => _future = _load());
 
@@ -2323,15 +2590,20 @@ class _DailySalesScreenState extends State<DailySalesScreen> {
               borderRadius: BorderRadius.circular(kRadiusMd),
               child: Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 12),
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.cardElev,
                   borderRadius: BorderRadius.circular(kRadiusMd),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.event_outlined,
-                        size: 18, color: AppColors.textSecondary),
+                    Icon(
+                      Icons.event_outlined,
+                      size: 18,
+                      color: AppColors.textSecondary,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -2343,8 +2615,11 @@ class _DailySalesScreenState extends State<DailySalesScreen> {
                         ),
                       ),
                     ),
-                    Icon(Icons.chevron_right,
-                        size: 20, color: AppColors.textMuted),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 20,
+                      color: AppColors.textMuted,
+                    ),
                   ],
                 ),
               ),
@@ -2357,7 +2632,8 @@ class _DailySalesScreenState extends State<DailySalesScreen> {
                 if (snap.connectionState != ConnectionState.done) {
                   return const SkeletonListPlaceholder();
                 }
-                if (snap.hasError) return _StateView.error(snap.error.toString());
+                if (snap.hasError)
+                  return _StateView.error(snap.error.toString());
                 final data = snap.data!;
                 return RefreshIndicator(
                   onRefresh: () async {
@@ -2386,10 +2662,10 @@ class _DailySalesScreenState extends State<DailySalesScreen> {
                                   ),
                                 ),
                                 Container(
-                                    width: 1,
-                                    height: 36,
-                                    color:
-                                        Colors.white.withValues(alpha: 0.3)),
+                                  width: 1,
+                                  height: 36,
+                                  color: Colors.white.withValues(alpha: 0.3),
+                                ),
                                 Expanded(
                                   child: _HeroStatColumn(
                                     label: 'INK',
@@ -2405,14 +2681,16 @@ class _DailySalesScreenState extends State<DailySalesScreen> {
                                 Expanded(
                                   child: _HeroStatColumn(
                                     label: 'ກ່ອນ VAT',
-                                    value: _fmt.format(data.totals.totalBeforeVat),
+                                    value: _fmt.format(
+                                      data.totals.totalBeforeVat,
+                                    ),
                                   ),
                                 ),
                                 Container(
-                                    width: 1,
-                                    height: 36,
-                                    color:
-                                        Colors.white.withValues(alpha: 0.3)),
+                                  width: 1,
+                                  height: 36,
+                                  color: Colors.white.withValues(alpha: 0.3),
+                                ),
                                 Expanded(
                                   child: _HeroStatColumn(
                                     label: 'VAT',
@@ -2562,11 +2840,8 @@ class _ItemAnalyticsScreenState extends State<ItemAnalyticsScreen> {
   final _searchCtl = TextEditingController();
   late DateTime _from;
   late DateTime _to;
-  Future<({
-    List<ItemAnalyticsRow> rows,
-    double grandTotal,
-    double grandQty,
-  })>? _future;
+  Future<({List<ItemAnalyticsRow> rows, double grandTotal, double grandQty})>?
+  _future;
 
   @override
   void initState() {
@@ -2588,15 +2863,10 @@ class _ItemAnalyticsScreenState extends State<ItemAnalyticsScreen> {
     super.dispose();
   }
 
-  Future<({
-    List<ItemAnalyticsRow> rows,
-    double grandTotal,
-    double grandQty,
-  })> _load() => AppScope.of(context).api.fetchItemAnalytics(
-        from: _from,
-        to: _to,
-        q: _searchCtl.text.trim(),
-      );
+  Future<({List<ItemAnalyticsRow> rows, double grandTotal, double grandQty})>
+  _load() => AppScope.of(
+    context,
+  ).api.fetchItemAnalytics(from: _from, to: _to, q: _searchCtl.text.trim());
 
   void _refresh() => setState(() => _future = _load());
 
@@ -2645,7 +2915,8 @@ class _ItemAnalyticsScreenState extends State<ItemAnalyticsScreen> {
                 if (snap.connectionState != ConnectionState.done) {
                   return const SkeletonListPlaceholder();
                 }
-                if (snap.hasError) return _StateView.error(snap.error.toString());
+                if (snap.hasError)
+                  return _StateView.error(snap.error.toString());
                 final data = snap.data!;
                 if (data.rows.isEmpty) return const _StateView.empty();
                 return RefreshIndicator(
@@ -2666,10 +2937,10 @@ class _ItemAnalyticsScreenState extends State<ItemAnalyticsScreen> {
                               ),
                             ),
                             Container(
-                                width: 1,
-                                height: 36,
-                                color:
-                                    Colors.white.withValues(alpha: 0.3)),
+                              width: 1,
+                              height: 36,
+                              color: Colors.white.withValues(alpha: 0.3),
+                            ),
                             Expanded(
                               child: _HeroStatColumn(
                                 label: 'ຈຳນວນລວມ',
@@ -2683,10 +2954,11 @@ class _ItemAnalyticsScreenState extends State<ItemAnalyticsScreen> {
                       for (var i = 0; i < data.rows.length; i++) ...[
                         if (i > 0) const SizedBox(height: 8),
                         _ItemRow(
-                            rank: i + 1,
-                            row: data.rows[i],
-                            fmt: _fmt,
-                            qtyFmt: _qtyFmt),
+                          rank: i + 1,
+                          row: data.rows[i],
+                          fmt: _fmt,
+                          qtyFmt: _qtyFmt,
+                        ),
                       ],
                     ],
                   ),
@@ -2814,12 +3086,15 @@ class DailyPaymentsScreen extends StatefulWidget {
 class _DailyPaymentsScreenState extends State<DailyPaymentsScreen> {
   final _fmt = NumberFormat('#,###', 'en_US');
   late DateTime _date;
-  Future<({
-    String date,
-    DailyPaymentTotals totals,
-    Map<String, double> breakdown,
-    List<DailyPaymentRow> rows,
-  })>? _future;
+  Future<
+    ({
+      String date,
+      DailyPaymentTotals totals,
+      Map<String, double> breakdown,
+      List<DailyPaymentRow> rows,
+    })
+  >?
+  _future;
 
   @override
   void initState() {
@@ -2834,12 +3109,15 @@ class _DailyPaymentsScreenState extends State<DailyPaymentsScreen> {
     _future ??= _load();
   }
 
-  Future<({
-    String date,
-    DailyPaymentTotals totals,
-    Map<String, double> breakdown,
-    List<DailyPaymentRow> rows,
-  })> _load() => AppScope.of(context).api.fetchDailyPayments(date: _date);
+  Future<
+    ({
+      String date,
+      DailyPaymentTotals totals,
+      Map<String, double> breakdown,
+      List<DailyPaymentRow> rows,
+    })
+  >
+  _load() => AppScope.of(context).api.fetchDailyPayments(date: _date);
 
   void _refresh() => setState(() => _future = _load());
 
@@ -2869,15 +3147,20 @@ class _DailyPaymentsScreenState extends State<DailyPaymentsScreen> {
               borderRadius: BorderRadius.circular(kRadiusMd),
               child: Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 12),
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.cardElev,
                   borderRadius: BorderRadius.circular(kRadiusMd),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.event_outlined,
-                        size: 18, color: AppColors.textSecondary),
+                    Icon(
+                      Icons.event_outlined,
+                      size: 18,
+                      color: AppColors.textSecondary,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -2889,8 +3172,11 @@ class _DailyPaymentsScreenState extends State<DailyPaymentsScreen> {
                         ),
                       ),
                     ),
-                    Icon(Icons.chevron_right,
-                        size: 20, color: AppColors.textMuted),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 20,
+                      color: AppColors.textMuted,
+                    ),
                   ],
                 ),
               ),
@@ -2903,7 +3189,8 @@ class _DailyPaymentsScreenState extends State<DailyPaymentsScreen> {
                 if (snap.connectionState != ConnectionState.done) {
                   return const SkeletonListPlaceholder();
                 }
-                if (snap.hasError) return _StateView.error(snap.error.toString());
+                if (snap.hasError)
+                  return _StateView.error(snap.error.toString());
                 final data = snap.data!;
                 return RefreshIndicator(
                   onRefresh: () async {
@@ -2950,21 +3237,25 @@ class _DailyPaymentsScreenState extends State<DailyPaymentsScreen> {
                             ),
                             const SizedBox(height: 12),
                             _breakdownRow(
-                                'ກີບ · ເງິນສົດ',
-                                AppColors.success,
-                                data.breakdown['02:cash'] ?? 0),
+                              'ກີບ · ເງິນສົດ',
+                              AppColors.success,
+                              data.breakdown['02:cash'] ?? 0,
+                            ),
                             _breakdownRow(
-                                'ກີບ · ໂອນ',
-                                AppColors.info,
-                                data.breakdown['02:transfer'] ?? 0),
+                              'ກີບ · ໂອນ',
+                              AppColors.info,
+                              data.breakdown['02:transfer'] ?? 0,
+                            ),
                             _breakdownRow(
-                                'ບາດ · ເງິນສົດ',
-                                AppColors.success,
-                                data.breakdown['01:cash'] ?? 0),
+                              'ບາດ · ເງິນສົດ',
+                              AppColors.success,
+                              data.breakdown['01:cash'] ?? 0,
+                            ),
                             _breakdownRow(
-                                'ບາດ · ໂອນ',
-                                AppColors.info,
-                                data.breakdown['01:transfer'] ?? 0),
+                              'ບາດ · ໂອນ',
+                              AppColors.info,
+                              data.breakdown['01:transfer'] ?? 0,
+                            ),
                           ],
                         ),
                       ),
@@ -2990,8 +3281,7 @@ class _DailyPaymentsScreenState extends State<DailyPaymentsScreen> {
                                               child: Text(
                                                 r.custName ?? r.custCode ?? '—',
                                                 maxLines: 1,
-                                                overflow:
-                                                    TextOverflow.ellipsis,
+                                                overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(
                                                   color: AppColors.textPrimary,
                                                   fontWeight: FontWeight.w600,
@@ -3001,23 +3291,25 @@ class _DailyPaymentsScreenState extends State<DailyPaymentsScreen> {
                                             ),
                                             if (r.isCancelled)
                                               Container(
-                                                padding: const EdgeInsets
-                                                    .symmetric(
-                                                    horizontal: 6, vertical: 2),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2,
+                                                    ),
                                                 decoration: BoxDecoration(
                                                   color: AppColors.danger
                                                       .withValues(alpha: 0.10),
                                                   borderRadius:
                                                       BorderRadius.circular(
-                                                          kRadiusXl),
+                                                        kRadiusXl,
+                                                      ),
                                                 ),
                                                 child: Text(
                                                   'ຍົກເລີກ',
                                                   style: TextStyle(
                                                     color: AppColors.danger,
                                                     fontSize: 10,
-                                                    fontWeight:
-                                                        FontWeight.w600,
+                                                    fontWeight: FontWeight.w600,
                                                   ),
                                                 ),
                                               ),

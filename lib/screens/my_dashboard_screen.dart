@@ -257,17 +257,14 @@ class _MyDashboardScreenState extends State<MyDashboardScreen> {
       case 'team':
         page = const TeamRankingsScreen();
         break;
+      case 'incentives':
+        page = const IncentiveReportScreen();
+        break;
       case 'cashier':
         page = const CashierActivityScreen();
         break;
       case 'promo-eff':
         page = const PromoEffectivenessScreen();
-        break;
-      case 'promotions':
-        page = const PromotionManagementScreen();
-        break;
-      case 'loyalty':
-        page = const LoyaltyConfigScreen();
         break;
       case 'refill':
         page = const StockRefillScreen();
@@ -1598,6 +1595,12 @@ class _ManagerToolsSection extends StatelessWidget {
             route: 'team',
           ),
           _Tool(
+            icon: Icons.workspace_premium_rounded,
+            title: 'ໂບນັດພະນັກງານຂາຍ',
+            subtitle: 'ຄຳນວນຈາກ Database',
+            route: 'incentives',
+          ),
+          _Tool(
             icon: Icons.point_of_sale_rounded,
             title: 'ກິດຈະກຳ Cashier',
             subtitle: 'ຍອດຮັບເງິນລາຍຄົນ',
@@ -1608,23 +1611,6 @@ class _ManagerToolsSection extends StatelessWidget {
             title: 'ປະສິດທິພາບ Promo',
             subtitle: 'ROI ຂອງໂປຣໂມຊັນ',
             route: 'promo-eff',
-          ),
-        ],
-      ),
-      _ToolGroup(
-        label: 'ການຕັ້ງຄ່າ',
-        tools: const [
-          _Tool(
-            icon: Icons.local_offer_rounded,
-            title: 'ຈັດການ Promotion',
-            subtitle: 'ສ້າງ / ແກ້ໄຂ promo',
-            route: 'promotions',
-          ),
-          _Tool(
-            icon: Icons.card_giftcard_rounded,
-            title: 'Loyalty Config',
-            subtitle: 'ຕັ້ງຄ່າຄະແນນສະສົມ',
-            route: 'loyalty',
           ),
         ],
       ),

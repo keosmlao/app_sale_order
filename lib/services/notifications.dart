@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import '../screens/orders_screen.dart';
 import 'api.dart';
 
 // Top-level handler invoked by the OS when the app is in the
@@ -19,6 +21,11 @@ Future<void> firebaseBackgroundHandler(RemoteMessage message) async {
 class NotificationService {
   NotificationService._();
   static final instance = NotificationService._();
+
+  /// Root navigator key — lets notification taps deep-link without a
+  /// BuildContext. Wired into MaterialApp.navigatorKey in main().
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
 
   final _local = FlutterLocalNotificationsPlugin();
   bool _initialised = false;
@@ -57,6 +64,7 @@ class NotificationService {
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
         iOS: DarwinInitializationSettings(),
       ),
+      onDidReceiveNotificationResponse: _onLocalTap,
     );
 
     // Defer message-listener wiring until after the first frame. Both calls
@@ -69,6 +77,18 @@ class NotificationService {
       FirebaseMessaging.onBackgroundMessage(firebaseBackgroundHandler);
       // Show a local notification when a message arrives while the app is open.
       FirebaseMessaging.onMessage.listen(_onForegroundMessage);
+      // Tap on a notification that opened the app from the background.
+      FirebaseMessaging.onMessageOpenedApp.listen(_onNotificationTap);
+      // Tap that cold-started the app from a terminated state. Delayed so the
+      // navigator and session restore have settled before we deep-link.
+      FirebaseMessaging.instance.getInitialMessage().then((m) {
+        if (m != null) {
+          Future.delayed(
+            const Duration(milliseconds: 2500),
+            () => _routeFromData(m.data),
+          );
+        }
+      });
     });
   }
 
@@ -148,7 +168,41 @@ class NotificationService {
         ),
         iOS: DarwinNotificationDetails(),
       ),
-      payload: message.data['type']?.toString(),
+      payload: jsonEncode(message.data),
+    );
+  }
+
+  // ── Tap → deep-link routing ────────────────────────────────────────────────
+
+  void _onNotificationTap(RemoteMessage message) => _routeFromData(message.data);
+
+  void _onLocalTap(NotificationResponse response) {
+    final raw = response.payload;
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        _routeFromData(decoded.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    } catch (_) {
+      // Legacy payloads stored just the type string — nothing to route to.
+    }
+  }
+
+  // Central router for notification taps. Order alerts (new sale order and
+  // price-request both carry a cartNumber) open that order's detail page on the
+  // root navigator.
+  void _routeFromData(Map<String, dynamic> data) {
+    final type = data['type']?.toString();
+    final cartNumber = data['cartNumber']?.toString();
+    if (cartNumber == null || cartNumber.isEmpty) return;
+    if (type != 'order_new' && type != 'price_request_new') return;
+    final nav = navigatorKey.currentState;
+    if (nav == null) return;
+    nav.push(
+      MaterialPageRoute(
+        builder: (_) => OrdersScreen(initialOrderId: cartNumber),
+      ),
     );
   }
 }

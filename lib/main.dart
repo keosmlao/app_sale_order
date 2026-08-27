@@ -5,6 +5,7 @@ import 'config.dart';
 import 'services/api.dart';
 import 'services/auth.dart';
 import 'services/notifications.dart';
+import 'services/presence.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 
@@ -37,7 +38,7 @@ class OdgSaleApp extends StatefulWidget {
   State<OdgSaleApp> createState() => _OdgSaleAppState();
 }
 
-class _OdgSaleAppState extends State<OdgSaleApp> {
+class _OdgSaleAppState extends State<OdgSaleApp> with WidgetsBindingObserver {
   late final ApiClient _api;
   late final AuthService _auth;
 
@@ -46,6 +47,25 @@ class _OdgSaleAppState extends State<OdgSaleApp> {
     super.initState();
     _api = ApiClient(baseUrl: widget.baseUrl);
     _auth = AuthService(_api);
+    // App lifecycle drives presence: a resume is "activity" (report online);
+    // pause/detach reports offline so the monitor reflects backgrounding.
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      PresenceService.instance.report(force: true);
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      PresenceService.instance.reportOffline();
+    }
   }
 
   @override
@@ -60,6 +80,10 @@ class _OdgSaleAppState extends State<OdgSaleApp> {
           return MaterialApp(
             title: 'ODG Sale',
             debugShowCheckedModeBanner: false,
+            // Shared key so push notifications can navigate without a
+            // BuildContext (tap a "new order" alert → open that order).
+            navigatorKey: NotificationService.navigatorKey,
+            navigatorObservers: [PresenceNavObserver()],
             theme: buildLightTheme(),
             darkTheme: buildDarkTheme(),
             themeMode: currentMode == AppThemeMode.dark ? ThemeMode.dark : ThemeMode.light,

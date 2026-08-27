@@ -11,7 +11,6 @@ import '../services/promotions_engine.dart';
 import 'barcode_scanner_screen.dart';
 import '../components/ui_components.dart';
 
-
 class CreateOrderScreen extends StatefulWidget {
   const CreateOrderScreen({super.key, this.editOrder});
 
@@ -412,7 +411,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     final now = DateTime.now();
     final t = code.trim();
     return _activePromos
-        .where((p) => isPromoActiveNow(p, now) && p.triggerItemCode?.trim() == t)
+        .where(
+          (p) => isPromoActiveNow(p, now) && p.triggerItemCode?.trim() == t,
+        )
         .toList();
   }
 
@@ -1267,7 +1268,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         _qtyByCode[item.code] = currentQty < 1 ? 1 : currentQty;
       }
     });
-    if (isSet && (_buildableSetsByCode[item.code] ?? 0).floor() < 1 && mounted) {
+    if (isSet &&
+        (_buildableSetsByCode[item.code] ?? 0).floor() < 1 &&
+        mounted) {
       _toast('ສ້າງຊຸດບໍ່ໄດ້ໃນສາງນີ້ — stock ສ່ວນປະກອບບໍ່ພໍ');
     }
   }
@@ -1498,7 +1501,14 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       ),
     );
     if (picked != null) {
-      setState(() => _selectedCustomer = picked);
+      setState(() {
+        _selectedCustomer = picked;
+        // A new customer = a new member discount %. Rebuild the per-line
+        // discount map so the cart's discount and totals reflect the new
+        // customer immediately (otherwise the stale map keeps the previous
+        // customer's discount).
+        _recomputePromotions();
+      });
     }
   }
 
@@ -1705,13 +1715,16 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         }
       }
       if (!mounted) return;
-      // Two soft pulses → success cue without the harsh "error buzz".
+      // Success: show a check-pass dialog, then close the screen returning
+      // `true` so the caller refreshes its order list.
       HapticFeedback.mediumImpact();
+      await _showResultDialog(success: true);
+      if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
       HapticFeedback.heavyImpact();
-      _toast('ຜິດພາດ: $e');
+      await _showResultDialog(success: false, message: '$e');
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -1723,6 +1736,28 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         content: Text(msg),
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(12),
+      ),
+    );
+  }
+
+  // Result feedback after a save attempt: a check-pass dialog on success, a
+  // red error dialog (with the server message) on failure. Success is modal
+  // (must tap ຕົກລົງ) so it isn't missed before the screen closes; errors are
+  // dismissible so the user can return and fix the bill.
+  Future<void> _showResultDialog({required bool success, String? message}) {
+    final isEdit = widget.editOrder != null;
+    final msg = message?.trim() ?? '';
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: !success,
+      builder: (_) => _ResultDialog(
+        success: success,
+        title: success
+            ? (isEdit ? 'ບັນທຶກການແກ້ໄຂສຳເລັດ' : 'ສ້າງບິນສຳເລັດ')
+            : 'ບັນທຶກບໍ່ສຳເລັດ',
+        message: success
+            ? 'ຂໍ້ມູນຖືກບັນທຶກຮຽບຮ້ອຍແລ້ວ'
+            : (msg.isNotEmpty ? msg : 'ເກີດຂໍ້ຜິດພາດ ກະລຸນາລອງໃໝ່'),
       ),
     );
   }
@@ -1791,245 +1826,228 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   // sees the required first step without switching tabs.
   Widget _orderEntryBody() {
     final selected = _selectedItems;
-    return Column(
+    final c = _selectedCustomer;
+    final dlv = _selectedDelivery;
+    final hasNote = _note.trim().isNotEmpty;
+    final hasExtra = _appliedExtraDiscount > 0;
+    final ready = c != null && selected.isNotEmpty && dlv != null;
+    // Guided, numbered order flow — each step shows a ✓ once satisfied so the
+    // cashier always knows what's left before the bill can be created.
+    return ListView(
+      key: const PageStorageKey('create-order-entry'),
+      padding: const EdgeInsets.fromLTRB(kSpace4, kSpace4, kSpace4, kSpace5),
       children: [
-        // POS terminal top bar — customer + running total stay pinned and
-        // always visible while the cashier scrolls the cart.
-        _posHeaderBar(),
-        Expanded(
-          child: ListView(
-            key: const PageStorageKey('create-order-entry'),
-            padding: const EdgeInsets.fromLTRB(
-              kSpace4,
-              kSpace3,
-              kSpace4,
-              kSpace5,
-            ),
-            children: [
-              _miniLabel(
-                'ສິນຄ້າ',
-                trailing: selected.isEmpty
-                    ? null
-                    : '${selected.length} ລາຍການ',
-              ),
-              _posCard(_itemsSectionBody(selected)),
-              const SizedBox(height: kSpace3),
-              _miniLabel('ການຮັບສິນຄ້າ'),
-              _posCard(_deliveryPickerRow()),
-              const SizedBox(height: kSpace3),
-              _miniLabel('ສ່ວນຫຼຸດ ແລະ ໝາຍເຫດ'),
-              _posCard(_compactSettingsRow()),
-              const SizedBox(height: kSpace3),
-              _miniLabel('ສະຫຼຸບ'),
-              _posCard(_summarySection()),
-            ],
-          ),
+        PageSection(
+          step: 1,
+          complete: c != null,
+          icon: Icons.person_rounded,
+          accent: AppColors.primary,
+          label: 'ລູກຄ້າ',
+          child: _customerStepBody(),
+        ),
+        const SizedBox(height: kSpace4),
+        PageSection(
+          step: 2,
+          complete: selected.isNotEmpty,
+          icon: Icons.shopping_cart_rounded,
+          accent: AppColors.primary,
+          label: 'ສິນຄ້າ',
+          trailing: selected.isEmpty ? null : '${selected.length} ລາຍການ',
+          child: _itemsSectionBody(selected),
+        ),
+        const SizedBox(height: kSpace4),
+        PageSection(
+          step: 3,
+          complete: dlv != null,
+          icon: Icons.local_shipping_rounded,
+          accent: AppColors.primary,
+          label: 'ການຮັບສິນຄ້າ',
+          child: _deliveryPickerRow(),
+        ),
+        const SizedBox(height: kSpace4),
+        PageSection(
+          step: 4,
+          complete: hasExtra || hasNote,
+          icon: Icons.local_offer_rounded,
+          accent: AppColors.primary,
+          label: 'ສ່ວນຫຼຸດ ແລະ ໝາຍເຫດ',
+          child: _compactSettingsRow(),
+        ),
+        const SizedBox(height: kSpace4),
+        PageSection(
+          step: 5,
+          complete: ready,
+          icon: Icons.receipt_long_rounded,
+          accent: AppColors.primary,
+          label: 'ສະຫຼຸບ',
+          child: _summarySection(),
         ),
       ],
     );
   }
 
-  // Pinned POS header: customer selector on the left, live bill total on the
-  // right — the two things a cashier needs in view at all times.
-  Widget _posHeaderBar() {
+  // Step ① body — customer picker. Empty state nudges (warning tint) that a
+  // customer is required; once picked it shows the name, phone, and member
+  // discount / loyalty balance as pills. Tapping anywhere re-opens the picker.
+  Widget _customerStepBody() {
     final c = _selectedCustomer;
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.primary, AppColors.primaryDark],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.30),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.fromLTRB(kSpace4, kSpace3, kSpace4, kSpace4),
-      child: Row(
-        children: [
-          Expanded(
-            child: InkWell(
-              onTap: _pickCustomer,
-              borderRadius: BorderRadius.circular(kRadiusMd),
-              child: Row(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.20),
-                      borderRadius: BorderRadius.circular(11),
-                    ),
-                    child: const Icon(
-                      Icons.person_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'ລູກຄ້າ',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.7),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                        const SizedBox(height: 1),
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                c?.name ?? 'ເລືອກລູກຄ້າ',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w900,
-                                  height: 1.1,
-                                ),
-                              ),
-                            ),
-                            Icon(
-                              Icons.expand_more_rounded,
-                              color: Colors.white.withValues(alpha: 0.85),
-                              size: 18,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (c != null) ...[
-            const SizedBox(width: kSpace2),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisSize: MainAxisSize.min,
+    if (c == null) {
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _pickCustomer,
+          borderRadius: BorderRadius.circular(kRadiusMd),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
               children: [
-                if (c.discountPct > 0)
-                  _headerChip(
-                    'ສ່ວນຫຼຸດ',
-                    '−${c.discountPct == c.discountPct.toInt() ? c.discountPct.toInt() : c.discountPct.toStringAsFixed(1)}%',
+                Icon(
+                  Icons.person_search_rounded,
+                  size: 20,
+                  color: AppColors.warning,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'ກົດເພື່ອເລືອກລູກຄ້າ',
+                    style: TextStyle(
+                      color: AppColors.warning,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                if (c.discountPct > 0 && _loyaltyConfig.isActive)
-                  const SizedBox(height: 5),
-                if (_loyaltyConfig.isActive)
-                  _headerChip(
-                    'ແຕ້ມສະສົມ',
-                    '${_fmt.format(c.pointBalance)} ${_loyaltyConfig.pointName}',
-                  ),
+                ),
+                Icon(
+                  Icons.expand_more_rounded,
+                  size: 20,
+                  color: AppColors.textMuted,
+                ),
               ],
             ),
+          ),
+        ),
+      );
+    }
+    final pills = <Widget>[];
+    if (c.discountPct > 0) {
+      final pct = c.discountPct == c.discountPct.toInt()
+          ? c.discountPct.toInt().toString()
+          : c.discountPct.toStringAsFixed(1);
+      pills.add(
+        _customerPill(
+          Icons.discount_rounded,
+          'ສ່ວນຫຼຸດ −$pct%',
+          AppColors.primary,
+        ),
+      );
+    }
+    if (_loyaltyConfig.isActive) {
+      pills.add(
+        _customerPill(
+          Icons.stars_rounded,
+          '${_fmt.format(c.pointBalance)} ${_loyaltyConfig.pointName}',
+          AppColors.accent,
+        ),
+      );
+    }
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _pickCustomer,
+        borderRadius: BorderRadius.circular(kRadiusMd),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        c.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          height: 1.15,
+                        ),
+                      ),
+                      if (c.phone != null && c.phone!.trim().isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          c.phone!,
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Text(
+                  'ປ່ຽນ',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Icon(
+                  Icons.expand_more_rounded,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
+              ],
+            ),
+            if (pills.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(spacing: 6, runSpacing: 6, children: pills),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
 
-  // Small white pill used on the purple header to show the picked customer's
-  // member discount and loyalty balance.
-  Widget _headerChip(String label, String value) {
+  // Small tinted pill for the customer step (member discount, loyalty points).
+  Widget _customerPill(IconData icon, String text, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.18),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(kRadiusPill),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.8),
-              fontSize: 9.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          Icon(icon, size: 13, color: color),
           const SizedBox(width: 5),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Lightweight section label (replaces the boxy PageSection header for the
-  // dense POS look).
-  Widget _miniLabel(String text, {String? trailing}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 0, 2, 7),
-      child: Row(
-        children: [
           Text(
             text,
             style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 13.5,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.1,
+              color: color,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w800,
             ),
           ),
-          if (trailing != null) ...[
-            const Spacer(),
-            Text(
-              trailing,
-              style: TextStyle(
-                color: AppColors.primary,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
         ],
       ),
-    );
-  }
-
-  // Flat surface for section content — lighter than PageSection.
-  Widget _posCard(Widget child) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(kRadiusLg),
-        border: Border.all(
-          color: AppColors.border.withValues(
-            alpha: ThemeService.isDark ? 0.3 : 0.6,
-          ),
-          width: 0.8,
-        ),
-      ),
-      child: child,
     );
   }
 
   // The "Items" card content — empty state with a prominent CTA, or
   // cart lines stacked with an inline add button at the bottom.
   Widget _itemsSectionBody(List<InventoryItem> selected) {
+    // The add-product button only appears once a customer is chosen — pricing,
+    // member discount and stock all depend on the customer, so adding items
+    // before that is blocked. Empty + no customer shows a nudge instead.
+    final hasCustomer = _selectedCustomer != null;
     if (selected.isEmpty) {
       return Column(
         children: [
@@ -2038,13 +2056,15 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             child: Column(
               children: [
                 Icon(
-                  Icons.shopping_cart_outlined,
+                  hasCustomer
+                      ? Icons.shopping_cart_outlined
+                      : Icons.lock_outline_rounded,
                   size: 40,
                   color: AppColors.textMuted.withValues(alpha: 0.45),
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'ຍັງບໍ່ມີລາຍການ',
+                  hasCustomer ? 'ຍັງບໍ່ມີລາຍການ' : 'ເລືອກລູກຄ້າກ່ອນ',
                   style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 14,
@@ -2053,13 +2073,16 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'ກົດເພີ່ມສິນຄ້າ ຫຼື ສະແກນ barcode',
+                  hasCustomer
+                      ? 'ກົດເພີ່ມສິນຄ້າ ຫຼື ສະແກນ barcode'
+                      : 'ປຸ່ມເພີ່ມສິນຄ້າຈະປະກົດເມື່ອເລືອກລູກຄ້າແລ້ວ',
                   style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),
           ),
-          _addProductRow(),
+          if (hasCustomer) _addProductRow(),
         ],
       );
     }
@@ -2075,8 +2098,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       ],
     );
   }
-
-
 
   // Primary CTA + scan button — used both inside the empty state and
   // beneath the cart list so the user can always add more items.
@@ -2099,11 +2120,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.add,
-                      size: 16,
-                      color: Colors.white,
-                    ),
+                    const Icon(Icons.add, size: 16, color: Colors.white),
                     const SizedBox(width: 5),
                     const Text(
                       'ເພີ່ມສິນຄ້າ',
@@ -2153,34 +2170,41 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   Widget _compactSettingsRow() {
     final hasNote = _note.trim().isNotEmpty;
     final hasExtra = _appliedExtraDiscount > 0;
-    return Row(
-      children: [
-        Expanded(
-          child: _compactChip(
-            icon: hasExtra ? Icons.local_offer : Icons.local_offer_outlined,
-            label: hasExtra
-                ? '−${_moneyFmt.format(_appliedExtraDiscount)}'
-                : 'ສ່ວນຫຼຸດ',
-            active: hasExtra,
-            onTap: () async {
-              await _editExtraDiscount();
-              if (mounted) setState(() {});
-            },
-          ),
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: _compactChip(
-            icon: hasNote ? Icons.sticky_note_2 : Icons.sticky_note_2_outlined,
-            label: hasNote ? _note : 'ໝາຍເຫດ',
-            active: hasNote,
-            onTap: () async {
-              await _editNote();
-              if (mounted) setState(() {});
-            },
-          ),
-        ),
-      ],
+    final discountChip = _compactChip(
+      icon: hasExtra ? Icons.local_offer : Icons.local_offer_outlined,
+      label: hasExtra
+          ? '−${_moneyFmt.format(_appliedExtraDiscount)}'
+          : 'ສ່ວນຫຼຸດ',
+      active: hasExtra,
+      onTap: () async {
+        await _editExtraDiscount();
+        if (mounted) setState(() {});
+      },
+    );
+    final noteChip = _compactChip(
+      icon: hasNote ? Icons.sticky_note_2 : Icons.sticky_note_2_outlined,
+      label: hasNote ? _note : 'ໝາຍເຫດ',
+      active: hasNote,
+      onTap: () async {
+        await _editNote();
+        if (mounted) setState(() {});
+      },
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 320) {
+          return Column(
+            children: [discountChip, const SizedBox(height: 6), noteChip],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: discountChip),
+            const SizedBox(width: 6),
+            Expanded(child: noteChip),
+          ],
+        );
+      },
     );
   }
 
@@ -2202,27 +2226,17 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               Icon(
                 Icons.local_shipping_outlined,
                 size: 18,
-                color: active ? AppColors.primary : AppColors.textMuted,
+                color: active ? AppColors.primary : AppColors.warning,
               ),
               const SizedBox(width: 10),
-              Text(
-                'ປະເພດການຮັບ:',
-                style: TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  dlv?.name ?? 'ກົດເພື່ອເລືອກ',
+                  dlv?.name ?? 'ກົດເພື່ອເລືອກປະເພດການຮັບສິນຄ້າ',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
                   style: TextStyle(
                     color: active ? AppColors.textPrimary : AppColors.warning,
-                    fontSize: 13,
+                    fontSize: 13.5,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -2368,14 +2382,22 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 ],
               ),
               const Spacer(),
-              Text(
-                _moneyFmt.format(_total),
-                style: TextStyle(
-                  color: AppColors.primary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  height: 1,
-                  letterSpacing: -0.3,
+              Flexible(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      _moneyFmt.format(_total),
+                      style: TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 4),
@@ -5326,11 +5348,7 @@ class _PromotionCard extends StatelessWidget {
             const SizedBox(height: 3),
             Row(
               children: [
-                Icon(
-                  Icons.schedule,
-                  size: 12,
-                  color: AppColors.textMuted,
-                ),
+                Icon(Icons.schedule, size: 12, color: AppColors.textMuted),
                 const SizedBox(width: 4),
                 Text(
                   '${promo.timeFrom ?? '--:--'} – ${promo.timeTo ?? '--:--'}',
@@ -5635,14 +5653,18 @@ class _ProductTile extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(kRadiusLg),
           border: Border.all(
-            color: inCart ? AppColors.primary : AppColors.border.withValues(alpha: isDark ? 0.35 : 0.6),
+            color: inCart
+                ? AppColors.primary
+                : AppColors.border.withValues(alpha: isDark ? 0.35 : 0.6),
             width: inCart ? 1.6 : 0.8,
           ),
           boxShadow: [
             BoxShadow(
               color: inCart
                   ? AppColors.primary.withValues(alpha: isDark ? 0.12 : 0.18)
-                  : (isDark ? const Color(0x10000000) : const Color(0x04000000)),
+                  : (isDark
+                        ? const Color(0x10000000)
+                        : const Color(0x04000000)),
               blurRadius: inCart ? 8 : 4,
               offset: const Offset(0, 2),
             ),
@@ -5694,8 +5716,15 @@ class _ProductTile extends StatelessWidget {
                                   color: AppColors.textMuted,
                                 ),
                               ),
-                              if (item.brandName != null && item.brandName!.isNotEmpty) ...[
-                                Text('  ·  ', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                              if (item.brandName != null &&
+                                  item.brandName!.isNotEmpty) ...[
+                                Text(
+                                  '  ·  ',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textMuted,
+                                  ),
+                                ),
                                 Text(
                                   item.brandName!,
                                   style: TextStyle(
@@ -5718,7 +5747,10 @@ class _ProductTile extends StatelessWidget {
                     children: [
                       if (inCart) ...[
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.primary,
                             borderRadius: BorderRadius.circular(kRadiusPill),
@@ -5743,11 +5775,14 @@ class _ProductTile extends StatelessWidget {
                   ),
                 ],
               ),
-              
+
               if (promoName != null && promoName!.isNotEmpty) ...[
                 const SizedBox(height: kSpace2 + 2),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.brandOrange.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(kRadiusSm),
@@ -5779,14 +5814,21 @@ class _ProductTile extends StatelessWidget {
               ],
 
               const SizedBox(height: kSpace4),
-              
+
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: kSpace3, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: kSpace3,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.black.withValues(alpha: 0.16) : AppColors.bg.withValues(alpha: 0.45),
+                  color: isDark
+                      ? Colors.black.withValues(alpha: 0.16)
+                      : AppColors.bg.withValues(alpha: 0.45),
                   borderRadius: BorderRadius.circular(kRadiusMd),
                   border: Border.all(
-                    color: AppColors.border.withValues(alpha: isDark ? 0.25 : 0.45),
+                    color: AppColors.border.withValues(
+                      alpha: isDark ? 0.25 : 0.45,
+                    ),
                     width: 0.6,
                   ),
                 ),
@@ -5795,7 +5837,11 @@ class _ProductTile extends StatelessWidget {
                     Expanded(
                       child: Row(
                         children: [
-                          Icon(Icons.inventory_2_outlined, size: 16, color: AppColors.textSecondary),
+                          Icon(
+                            Icons.inventory_2_outlined,
+                            size: 16,
+                            color: AppColors.textSecondary,
+                          ),
                           const SizedBox(width: 8),
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -5826,7 +5872,9 @@ class _ProductTile extends StatelessWidget {
                     Container(
                       width: 1,
                       height: 28,
-                      color: AppColors.border.withValues(alpha: isDark ? 0.35 : 0.7),
+                      color: AppColors.border.withValues(
+                        alpha: isDark ? 0.35 : 0.7,
+                      ),
                     ),
                     const SizedBox(width: kSpace3),
                     Expanded(
@@ -5835,7 +5883,9 @@ class _ProductTile extends StatelessWidget {
                           Icon(
                             Icons.sell_outlined,
                             size: 15,
-                            color: unitPrice > 0 ? AppColors.primary : AppColors.textMuted,
+                            color: unitPrice > 0
+                                ? AppColors.primary
+                                : AppColors.textMuted,
                           ),
                           const SizedBox(width: 8),
                           Column(
@@ -5855,7 +5905,9 @@ class _ProductTile extends StatelessWidget {
                                     ? '${fmt.format(unitPrice)} ກີບ'
                                     : 'ຍັງບໍ່ມີລາຄາ',
                                 style: TextStyle(
-                                  color: unitPrice > 0 ? AppColors.primary : AppColors.textMuted,
+                                  color: unitPrice > 0
+                                      ? AppColors.primary
+                                      : AppColors.textMuted,
                                   fontSize: 13.5,
                                   fontWeight: FontWeight.w900,
                                   fontFeatures: kTabularFigures,
@@ -5877,3 +5929,108 @@ class _ProductTile extends StatelessWidget {
   }
 }
 
+// ─── Save-result dialog ──────────────────────────────────────────────────────
+// Modal feedback shown after a save attempt. The status badge scales in with
+// an elastic "pop" (Curves.elasticOut) so a success reads as a satisfying
+// check-pass; the same shell renders the red error variant.
+class _ResultDialog extends StatelessWidget {
+  const _ResultDialog({
+    required this.success,
+    required this.title,
+    required this.message,
+  });
+
+  final bool success;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = success ? AppColors.success : AppColors.danger;
+    final icon = success ? Icons.check_rounded : Icons.close_rounded;
+    return Dialog(
+      backgroundColor: AppColors.cardBg,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(kRadiusXl),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 520),
+              curve: Curves.elasticOut,
+              builder: (_, t, __) => Transform.scale(
+                scale: t.clamp(0.0, 1.15),
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, color: Colors.white, size: 36),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 13.5,
+                height: 1.45,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              height: kTouchTargetLg,
+              child: FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: FilledButton.styleFrom(
+                  backgroundColor: color,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(kRadiusLg),
+                  ),
+                ),
+                child: Text(
+                  success ? "ຕົກລົງ" : "ປິດ",
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
