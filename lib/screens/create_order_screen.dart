@@ -2133,6 +2133,16 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     // The numbered 1-2-3 wizard is dropped at this width, as the web drops
     // it. It exists to say what step is next on a screen that shows one step
     // at a time; with everything on the glass it is chrome eating height.
+    // Nothing in the cart, nothing to show beside it: between sales the
+    // rail held a customer nobody had picked yet and a total of nothing,
+    // while the shelf went short next to it. It stands down until the
+    // first item is added, and the catalogue browses at full width.
+    if (selected.isEmpty) {
+      return Column(
+        children: [_shopPaneHeader(withCustomer: true), _shopPane()],
+      );
+    }
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -2306,7 +2316,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     return MediaQuery.of(context).size.width < 1180;
   }
 
-  Widget _shopPaneHeader() {
+  Widget _shopPaneHeader({bool withCustomer = false}) {
     // The web labels the catalogue column and counts it. When the POS is
     // the tab there is no app bar overhead to carry the promo button, so
     // it rides here.
@@ -2319,7 +2329,58 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       trailing: _catalogBusy
           ? '…'
           : '${_catalog.length}${_catalogExhausted ? '' : '+'} ລາຍການ',
-      action: _buildPromoAppBarButton(compact: true),
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // With the rail stood down the customer control goes with it,
+          // and nothing can be added until one is picked — so it comes up
+          // here rather than leaving the screen with no way forward.
+          if (withCustomer) ...[_shopCustomerChip(), const SizedBox(width: 6)],
+          _buildPromoAppBarButton(compact: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _shopCustomerChip() {
+    final c = _selectedCustomer;
+    final picked = c != null;
+    return Material(
+      color: picked
+          ? AppColors.primary.withValues(alpha: 0.08)
+          : AppColors.warning.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(kRadiusPill),
+      child: InkWell(
+        onTap: _pickCustomer,
+        borderRadius: BorderRadius.circular(kRadiusPill),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                picked ? Icons.person_rounded : Icons.person_search_rounded,
+                size: 15,
+                color: picked ? AppColors.primary : AppColors.warning,
+              ),
+              const SizedBox(width: 5),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 190),
+                child: Text(
+                  picked ? c.name : 'ເລືອກລູກຄ້າກ່ອນ',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: picked ? AppColors.primary : AppColors.warning,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
