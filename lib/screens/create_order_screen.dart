@@ -97,8 +97,12 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   // promotion matching, and set lookups.
   List<InventoryItem> _catalog = const [];
   bool _catalogBusy = true;
-  // Paging state for the grid. The storefront stocks ~700 items and a page
-  // is 60, so browsing past the first screen has to ask for more.
+  // Paging for the grid. The storefront stocks ~700 items, so the shop
+  // opens on a screenful and grows as it is scrolled: the first page is
+  // what fits, and each page after it is small enough to arrive before
+  // the scroll reaches the end of what is already drawn.
+  static const int _kCatalogFirstPage = 20;
+  static const int _kCatalogNextPage = 10;
   bool _catalogLoadingMore = false;
   bool _catalogExhausted = false;
   Timer? _catalogDebounce;
@@ -3158,9 +3162,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       });
     }
     try {
-      final rows = await AppScope.of(
-        context,
-      ).api.fetchPosCatalog(warehouse: kStorefrontWarehouse, q: q);
+      final rows = await AppScope.of(context).api.fetchPosCatalog(
+        warehouse: kStorefrontWarehouse,
+        q: q,
+        limit: _kCatalogFirstPage,
+      );
       if (!mounted || seq != _catalogSeq) return;
       setState(() {
         _catalog = rows;
@@ -3190,6 +3196,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       final rows = await AppScope.of(context).api.fetchPosCatalog(
         warehouse: kStorefrontWarehouse,
         q: _query.trim(),
+        limit: _kCatalogNextPage,
         offset: _catalog.length,
       );
       if (!mounted || seq != _catalogSeq) return;
