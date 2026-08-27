@@ -108,6 +108,19 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   Timer? _catalogDebounce;
   int _catalogSeq = 0;
 
+  // Bumped on every setState, so the cart — which on a phone is a route
+  // pushed over this screen — rebuilds with it. A pushed route does not
+  // rebuild when the screen underneath calls setState, and the cart is
+  // built from this screen's state, so without this every +/- in it would
+  // change the numbers and show none of it.
+  final ValueNotifier<int> _revision = ValueNotifier<int>(0);
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _revision.value++;
+  }
+
   // Which of the two portrait tabs is showing: 0 shop, 1 cart.
   int _portraitTab = 0;
 
@@ -177,6 +190,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     _searchDebounce?.cancel();
     _pricingDebounce?.cancel();
     _catalogDebounce?.cancel();
+    _revision.dispose();
     super.dispose();
   }
 
@@ -2060,13 +2074,12 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       // On a tablet the pay button belongs at the foot of the sale rail,
       // under the total it is paying — where the web puts it — not spread
       // across the bottom of the catalogue as well.
-      bottomNavigationBar: _loading
+      floatingActionButton: _cartFab(),
+      // The pay bar belongs with the cart, and on a phone the cart is a
+      // screen of its own now.
+      bottomNavigationBar: _loading || !_usesShopCartNav(context)
           ? null
-          : _usesShopCartNav(context)
-          ? _shopCartNav()
-          : isTablet(context)
-          ? null
-          : _buildMainSubmitBar(),
+          : _shopCartNav(),
     );
   }
 
@@ -2074,42 +2087,16 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   // sees the required first step without switching tabs.
   Widget _orderEntryBody() {
     final selected = _selectedItems;
-    final c = _selectedCustomer;
 
-    // Guided, numbered order flow — each step shows a ✓ once satisfied so the
-    // cashier always knows what's left before the bill can be created.
-    final customerStep = PageSection(
-      step: 1,
-      complete: c != null,
-      icon: Icons.person_rounded,
-      accent: AppColors.primary,
-      label: 'ລູກຄ້າ',
-      child: _customerStepBody(),
-    );
-    final itemsStep = PageSection(
-      step: 2,
-      complete: selected.isNotEmpty,
-      icon: Icons.shopping_cart_rounded,
-      accent: AppColors.primary,
-      label: 'ສິນຄ້າ',
-      trailing: selected.isEmpty ? null : '${selected.length} ລາຍການ',
-      child: _itemsSectionBody(selected),
-    );
-    // The scrolling part of the screen is now just the two things being
-    // built — who is buying and what they are buying. How it ships, any
-    // discount, the note and the total are all in the footer: each is one
-    // line, all four are always in view, and none of them scroll away
-    // behind the cart as items are added.
+    // A phone is the shop, with the basket a button away.
+    //
+    // It cannot use the two-tab bar the tablet uses in portrait: the app's
+    // own navigation already owns the bottom of the screen, and stacking a
+    // second bar under the first is two rows of tabs to read. So the cart
+    // is a floating button carrying its count, and opens over the shelf —
+    // which is how a shopping app does it anyway.
     if (!isTablet(context)) {
-      return ListView(
-        key: const PageStorageKey('create-order-entry'),
-        padding: const EdgeInsets.fromLTRB(kSpace4, kSpace4, kSpace4, kSpace5),
-        children: [
-          customerStep,
-          const SizedBox(height: kSpace4),
-          itemsStep,
-        ],
-      );
+      return Column(children: [_shopPaneHeader(), _shopPane()]);
     }
 
     // Catalogue on the left, the sale on the right. Two panes, not three —
@@ -2158,6 +2145,49 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         ),
       ],
     );
+  }
+
+  // The phone's basket: a floating button carrying its count, opening the
+  // cart over the shelf.
+  Widget? _cartFab() {
+    if (isTablet(context) || _loading) return null;
+    final count = _qtyByCode.values.fold<int>(0, (a, b) => a + b);
+    return FloatingActionButton.extended(
+      onPressed: _openCartScreen,
+      backgroundColor: AppColors.primary,
+      foregroundColor: Colors.white,
+      icon: const Icon(Icons.shopping_cart_rounded, size: 20),
+      label: Text(
+        count > 0 ? 'ກະຕ່າ · $count' : 'ກະຕ່າ',
+        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+      ),
+    );
+  }
+
+  Future<void> _openCartScreen() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ValueListenableBuilder<int>(
+          // The cart reads and writes this screen's state, so it is built
+          // from here rather than lifted into a screen of its own.
+          valueListenable: _revision,
+          builder: (ctx, _, _) => Scaffold(
+            backgroundColor: AppColors.bg,
+            appBar: AppBar(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              title: const Text(
+                'ກະຕ່າຂາຍ',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+              ),
+            ),
+            body: _cartPane(_selectedItems),
+          ),
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   // Shop / cart, the way a shopping app does it. The cart carries the
@@ -3250,9 +3280,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       onRefresh: () => _fetchCatalog(_query.trim()),
       child: LayoutBuilder(
         builder: (context, box) {
-          final columns = isTablet(context)
-              ? 4
-              : (box.maxWidth / 164).floor().clamp(2, 4);
+          // Four across a tablet, two across a phone: on a 400px screen a
+          // third column leaves each tile ~120px, which is not enough for
+          // a photo and a product name that means anything.
+          final columns = isTablet(context) ? 4 : 2;
           return NotificationListener<ScrollNotification>(
             // Fetch the next page a screen before the end, so the grid
             // keeps scrolling rather than stopping at a spinner.

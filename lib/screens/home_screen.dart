@@ -68,10 +68,20 @@ class _HomeScreenState extends State<HomeScreen> {
       activeIcon: Icons.home_rounded,
       page: MyDashboardScreen(),
     ),
+    // ຂາຍ is the shop, the way it is on the till — a salesperson opens the
+    // app onto what they can sell, not onto what has already been sold.
+    _NavTab(
+      title: 'ຂາຍໜ້າຮ້ານ',
+      ownHeader: true,
+      label: 'ຂາຍ',
+      icon: Icons.storefront_outlined,
+      activeIcon: Icons.storefront_rounded,
+      page: CreateOrderScreen(embedded: true),
+    ),
     _NavTab(
       title: 'Sale Order',
       ownHeader: true,
-      label: 'ຂາຍ',
+      label: 'ບິນ',
       icon: Icons.receipt_long_outlined,
       activeIcon: Icons.receipt_long_rounded,
       page: OrdersScreen(),
