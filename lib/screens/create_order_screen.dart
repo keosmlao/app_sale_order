@@ -3491,7 +3491,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       borderRadius: BorderRadius.circular(11),
       child: Container(
         width: double.infinity,
-        color: AppColors.cardElev,
+        // White, not the grey surface tint. Product shots are cut out on
+        // white, and `contain` letterboxes them — against grey every photo
+        // came with two visible bands down its sides.
+        color: ThemeService.isDark ? AppColors.cardElev : Colors.white,
+        padding: const EdgeInsets.all(6),
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -3558,98 +3562,124 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     final price = _unitPrice(p);
     final out = !p.hasSet && stock <= 0;
     final low = !out && stock > 0 && stock <= 5;
+    final inCart = qty > 0;
     final stockColor = out
         ? AppColors.danger
         : low
         ? AppColors.warning
         : AppColors.success;
 
-    return Material(
-      color: AppColors.cardBg,
-      borderRadius: BorderRadius.circular(kRadiusLg),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(kRadiusLg),
-        onTap: out ? null : () => _addFromCatalog(p, qty),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(
-            kSpace3,
-            kSpace3,
-            kSpace3,
-            kSpace2,
-          ),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(kRadiusLg),
-            border: Border.all(
-              color: qty > 0 ? AppColors.primary : AppColors.border,
-              width: qty > 0 ? 1.5 : 1,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Sixty fridges have near-identical names; the picture is
-              // what tells them apart at a glance. 613 of the 701 items
-              // warehouse 1101 stocks have one.
-              Expanded(child: _catalogPhoto(p, qty)),
-              const SizedBox(height: 8),
-              Text(
-                p.nameLo,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  height: 1.3,
-                  fontWeight: FontWeight.w800,
-                  color: out ? AppColors.textMuted : AppColors.textPrimary,
-                ),
+    return Opacity(
+      // Out of stock reads as unavailable rather than as one more thing to
+      // try tapping.
+      opacity: out ? 0.55 : 1,
+      child: Material(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        // A card lifts off the page instead of being drawn onto it. The
+        // border is kept for the in-cart state, where it has something to
+        // say; a permanent one around every tile is a grid of boxes.
+        elevation: inCart ? 0 : 1.5,
+        shadowColor: Colors.black.withValues(alpha: 0.10),
+        child: InkWell(
+          onTap: out ? null : () => _addFromCatalog(p, qty),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: inCart ? AppColors.primary : Colors.transparent,
+                width: 1.5,
               ),
-              Divider(height: kSpace3, color: AppColors.divider),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _moneyFmt.format(price),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.primaryDark,
+            ),
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 11),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Sixty fridges have near-identical names; the picture is
+                // what tells them apart at a glance. 613 of the 701 items
+                // warehouse 1101 stocks have one.
+                Expanded(child: _catalogPhoto(p, qty)),
+                const SizedBox(height: 9),
+                Text(
+                  p.nameLo,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.3,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                // Price and stock share one line with no rule between
+                // them — the whitespace already separates the name from
+                // the numbers.
+                Row(
+                  children: [
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              _moneyFmt.format(price),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 15,
+                                height: 1.1,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.3,
+                                color: AppColors.primaryDark,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            'ກີບ',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                  // The in-cart count rides on the photo, so the footer is
-                  // always price + stock and the row never reflows as
-                  // items are added.
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: stockColor,
-                          shape: BoxShape.circle,
-                        ),
+                    const SizedBox(width: 6),
+                    // A tinted pill, not a loose dot and a number: it
+                    // reads as a status at a glance and keeps its shape
+                    // whether the figure is 1 or 120.
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
                       ),
-                      const SizedBox(width: 5),
-                      Text(
+                      decoration: BoxDecoration(
+                        color: stockColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(kRadiusPill),
+                      ),
+                      child: Text(
                         p.hasSet
                             ? 'ຊຸດ'
                             : out
                             ? 'ໝົດ'
                             : _moneyFmt.format(stock),
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 10.5,
                           fontWeight: FontWeight.w900,
+                          height: 1.35,
                           color: stockColor,
                         ),
                       ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
