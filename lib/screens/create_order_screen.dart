@@ -2213,12 +2213,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     const SizedBox(height: kSpace3),
                     _itemsSectionBody(selected),
                     const SizedBox(height: kSpace3),
-                    _railBlock('ສະຫຼຸບ', _summarySection()),
-                    const SizedBox(height: kSpace3),
-                    // One block, the way the web keeps "ຈັດສົ່ງ · ໝາຍເຫດ"
-                    // to a single row: two labelled cards for what is
-                    // mostly one decision cost more height than the cart
-                    // lines above them.
+                    // Delivery, discount and note before the summary: each
+                    // of them changes the figure, so the figure reads last
+                    // — right above the pay bar that charges it.
                     _railBlock(
                       'ຈັດສົ່ງ · ສ່ວນຫຼຸດ · ໝາຍເຫດ',
                       Column(
@@ -2230,6 +2227,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                         ],
                       ),
                     ),
+                    const SizedBox(height: kSpace3),
+                    _railBlock('ສະຫຼຸບ', _summarySection()),
                   ],
                 ),
               ),
