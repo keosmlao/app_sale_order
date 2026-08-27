@@ -4168,10 +4168,15 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         rows.add(Divider(height: 1, color: AppColors.divider));
       }
       final extras = _extraAllocByCode[p.code] ?? const <_ExtraAllocation>[];
+      // The quantity this warehouse is being asked for — the whole line
+      // less whatever other warehouses are covering. Without this the row
+      // measured the full quantity against one shelf and cried backorder
+      // over stock already accounted for somewhere else.
       rows.add(
         _SelectedRow(
           item: p,
           qty: qty,
+          coveredHere: qty - _extraQtyFor(p.code),
           stock: stock,
           warehouse: _warehouseByItemCode[p.code],
           location: _locationByItemCode[p.code],
@@ -4852,6 +4857,7 @@ class _SelectedRow extends StatelessWidget {
   const _SelectedRow({
     required this.item,
     required this.qty,
+    this.coveredHere,
     required this.stock,
     required this.warehouse,
     this.serial,
@@ -4882,6 +4888,9 @@ class _SelectedRow extends StatelessWidget {
 
   final InventoryItem item;
   final int qty;
+  // How much of `qty` this row's own warehouse has to supply. Null means
+  // all of it; lower when the line also draws on another warehouse.
+  final int? coveredHere;
   final double stock;
   final SerialUnit? serial;
   final Warehouse? warehouse;
@@ -4931,7 +4940,8 @@ class _SelectedRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasWarehouse = warehouse != null && location != null;
     final hasDiscount = discountPct > 0 && discountAmount > 0;
-    final hasBackorder = hasWarehouse && stock >= 0 && qty > stock;
+    final needHere = coveredHere ?? qty;
+    final hasBackorder = hasWarehouse && stock >= 0 && needHere > stock;
     final hasPromo = promoLabel.isNotEmpty;
     final discountPctLabel = discountPct == discountPct.toInt()
         ? discountPct.toInt().toString()
@@ -5274,7 +5284,7 @@ class _SelectedRow extends StatelessWidget {
                   const SizedBox(width: 4),
                   Flexible(
                     child: Text(
-                      'Backorder · ມີ ${stock == stock.toInt() ? stock.toInt() : stock.toStringAsFixed(2)} · ຂາດ ${qty - stock.toInt() > 0 ? qty - stock.toInt() : (qty - stock).toStringAsFixed(2)}',
+                      'Backorder · ມີ ${stock == stock.toInt() ? stock.toInt() : stock.toStringAsFixed(2)} · ຂາດ ${needHere - stock.toInt() > 0 ? needHere - stock.toInt() : (needHere - stock).toStringAsFixed(2)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
