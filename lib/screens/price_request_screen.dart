@@ -186,7 +186,7 @@ class _PriceRequestScreenState extends State<PriceRequestScreen> {
         children: [
           // Hero card explaining the flow.
           HeroPanel(
-            colors: const [AppColors.brandOrange, AppColors.brandOrangeDark],
+            colors: [AppColors.brandOrange, AppColors.brandOrangeDark],
             padding: const EdgeInsets.fromLTRB(
                 kSpace5, kSpace4, kSpace5, kSpace5),
             child: Row(

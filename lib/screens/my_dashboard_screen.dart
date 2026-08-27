@@ -384,7 +384,7 @@ class _GreetingHeader extends StatelessWidget {
             ),
             child: Text(
               DateFormat('d MMM').format(DateTime.now()),
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppColors.accent,
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
@@ -417,7 +417,7 @@ class _OdooPanelLabel extends StatelessWidget {
           Container(
             width: 6,
             height: 6,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: AppColors.accent,
               shape: BoxShape.circle,
             ),
@@ -515,7 +515,7 @@ class _SalesHeroPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return HeroPanel(
-      colors: const [AppColors.primary, AppColors.primaryDark],
+      colors: [AppColors.primary, AppColors.primaryDark],
       padding: const EdgeInsets.all(kSpace5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1778,7 +1778,7 @@ class _ErrorCard extends StatelessWidget {
               color: AppColors.danger.withValues(alpha: 0.10),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.cloud_off_rounded,
               size: 32,
               color: AppColors.danger,

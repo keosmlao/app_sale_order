@@ -167,7 +167,7 @@ class _InventoryDetailScreenState extends State<InventoryDetailScreen> {
                   color: AppColors.danger.withValues(alpha: 0.14),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.cloud_off,
                   size: 24,
                   color: AppColors.danger,

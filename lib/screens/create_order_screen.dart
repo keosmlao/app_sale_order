@@ -2485,12 +2485,14 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       // On a tablet the pay button belongs at the foot of the sale rail,
       // under the total it is paying — where the web puts it — not spread
       // across the bottom of the catalogue as well.
-      floatingActionButton: _cartFab(),
       // The pay bar belongs with the cart, and on a phone the cart is a
-      // screen of its own now.
-      bottomNavigationBar: _loading || !_usesShopCartNav(context)
+      // screen of its own — reached by the pill, which spans the width so
+      // the total fits beside the count.
+      bottomNavigationBar: _loading
           ? null
-          : _shopCartNav(),
+          : _usesShopCartNav(context)
+          ? _shopCartNav()
+          : _cartFab(),
     );
   }
 
@@ -2573,14 +2575,56 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   Widget? _cartFab() {
     if (isTablet(context) || _loading) return null;
     final count = _qtyByCode.values.fold<int>(0, (a, b) => a + b);
-    return FloatingActionButton.extended(
-      onPressed: _openCartScreen,
-      backgroundColor: AppColors.primary,
-      foregroundColor: Colors.white,
-      icon: const Icon(Icons.shopping_cart_rounded, size: 20),
-      label: Text(
-        count > 0 ? 'ກະຕ່າ · $count' : 'ກະຕ່າ',
-        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+    if (count == 0) return null;
+    // The basket carries its money, not just its count. Someone selling
+    // from a phone wants the running total without opening anything, and
+    // this is the one place the loud colour is spent.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(kSpace4, 0, kSpace4, kSpace2),
+      child: Material(
+        color: AppColors.cart,
+        borderRadius: BorderRadius.circular(kRadiusLg),
+        elevation: 8,
+        shadowColor: AppColors.cart.withValues(alpha: 0.45),
+        child: InkWell(
+          onTap: _openCartScreen,
+          borderRadius: BorderRadius.circular(kRadiusLg),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: kSpace4,
+              vertical: 13,
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.shopping_cart_rounded,
+                  size: 19,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 9),
+                Text(
+                  'ກະຕ່າ · $count ອັນ',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13.5,
+                    color: Colors.white,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${_moneyFmt.format(_total)} ກີບ',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                    color: Colors.white,
+                    letterSpacing: -0.3,
+                    fontFeatures: kTabularFigures,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -3437,6 +3481,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                         fontWeight: FontWeight.w900,
                         height: 1,
                         letterSpacing: -0.3,
+                        fontFeatures: kTabularFigures,
                       ),
                     ),
                   ),
@@ -3843,7 +3888,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.primary,
+                    color: AppColors.cart,
                     borderRadius: BorderRadius.circular(kRadiusPill),
                   ),
                   child: Text(
@@ -3909,7 +3954,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: inCart ? AppColors.primary : Colors.transparent,
+                color: inCart ? AppColors.cart : Colors.transparent,
                 width: 1.5,
               ),
             ),
@@ -3954,6 +3999,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                                 height: 1.1,
                                 fontWeight: FontWeight.w900,
                                 letterSpacing: -0.3,
+                                fontFeatures: kTabularFigures,
                                 color: AppColors.primaryDark,
                               ),
                             ),
@@ -4627,7 +4673,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 color: AppColors.danger.withValues(alpha: 0.18),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.timer_outlined,
                 color: AppColors.danger,
                 size: 18,
@@ -4669,7 +4715,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               '• ',
                               style: TextStyle(
                                 color: AppColors.danger,
@@ -4692,7 +4738,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                                   ),
                                   Text(
                                     'ມີ ${b.have} · ຂາດ ${b.short}',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: AppColors.danger,
                                       fontSize: 11,
                                       fontWeight: FontWeight.w700,
@@ -4748,11 +4794,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 color: AppColors.warning.withValues(alpha: 0.18),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(
-                Icons.discount,
-                color: AppColors.warning,
-                size: 18,
-              ),
+              child: Icon(Icons.discount, color: AppColors.warning, size: 18),
             ),
             const SizedBox(width: 10),
             const Expanded(child: Text('ຂໍລາຄາພິເສດ')),
@@ -4797,7 +4839,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     color: AppColors.warning.withValues(alpha: 0.4),
                   ),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
                     Icon(
                       Icons.info_outline,
@@ -4881,6 +4923,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             color: AppColors.slate900,
             fontWeight: FontWeight.w700,
             fontSize: 13,
+            // Kip runs to eight digits; equal-width figures keep the
+            // column straight and stop it twitching as quantities change.
+            fontFeatures: kTabularFigures,
           ),
         ),
       ],
@@ -5236,7 +5281,11 @@ class _SelectedRow extends StatelessWidget {
                   icon: Icons.warehouse_outlined,
                   label: warehouseTitle,
                   active: hasWarehouse,
-                  color: hasWarehouse ? AppColors.gold : AppColors.warning,
+                  color: !hasWarehouse
+                      ? AppColors.warning
+                      : warehouse?.code == kStorefrontWarehouse
+                      ? AppColors.primary
+                      : AppColors.cart,
                   onTap: onPickWarehouse,
                 ),
               ),
@@ -6098,7 +6147,7 @@ class _NewCustomerScreenState extends State<_NewCustomerScreen> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.error_outline,
                         color: AppColors.danger,
                         size: 20,
@@ -6107,7 +6156,7 @@ class _NewCustomerScreenState extends State<_NewCustomerScreen> {
                       Expanded(
                         child: Text(
                           _error!,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppColors.danger,
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -7354,7 +7403,7 @@ class _ProductTile extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.star_rounded,
                         size: 13,
                         color: AppColors.brandOrange,
@@ -7362,7 +7411,7 @@ class _ProductTile extends StatelessWidget {
                       const SizedBox(width: 4),
                       Text(
                         'ໂປຣ: $promoName',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppColors.brandOrange,
                           fontSize: 11,
                           fontWeight: FontWeight.w800,

@@ -245,7 +245,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
                             kSpace3, kSpace2, kSpace3, 110),
                         itemCount: list.length,
                         separatorBuilder: (_, __) =>
-                            const SizedBox(height: kSpace2),
+                            SizedBox(height: kSpace2),
                         itemBuilder: (_, i) => FadeInSlide(
                           duration: Duration(
                             milliseconds: 300 + (i < 6 ? i * 80 : 480),
@@ -267,11 +267,11 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
 
   Widget _buildFilters() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(0, kSpace3, 0, kSpace3),
+      padding: EdgeInsets.fromLTRB(0, kSpace3, 0, kSpace3),
       child: ChipFilterRow<String>(
         value: _statusFilter,
         onChanged: _setStatus,
-        items: const [
+        items: [
           (
             value: 'pending',
             label: 'ລໍຖ້າ',
@@ -502,7 +502,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
                         children: [
                           Text(
                             '−${req.discountPct.toStringAsFixed(1)}%',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AppColors.danger,
                               fontWeight: FontWeight.w900,
                               fontSize: 13,
@@ -510,7 +510,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
                           ),
                           Text(
                             '−${_moneyFmt.format(saved)}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AppColors.danger,
                               fontSize: 9,
                               fontWeight: FontWeight.w700,
@@ -729,7 +729,7 @@ class _ErrorCard extends StatelessWidget {
               color: AppColors.danger.withValues(alpha: 0.14),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.cloud_off,
               size: 26,
               color: AppColors.danger,

@@ -23,48 +23,74 @@ class ThemeService {
 
 // ── Dynamic Color Palette ───────────────────────────────────────────────────
 class AppColors {
-  // Brand — matches the ODG web app palette (web_sale_order globals.css).
-  // Indigo carries primary actions; sky is the secondary highlight.
-  static const primary = Color(0xFF6366F1); // indigo-500
-  static const primaryDark = Color(0xFF4F46E5); // indigo-600
-  static const primaryLight = Color(0xFF818CF8); // indigo-400
-  static const primary50 = Color(0xFFF5F3FF); // violet-50
-  static const primary100 = Color(0xFFEDE9FE); // violet-100
-  static const accent = Color(0xFF0284C7); // sky-600
+  // ── The counter palette ────────────────────────────────────────────
+  // Built for a shop floor, not a spreadsheet: the product photography
+  // is the colour, and the interface stays out of its way.
+  //
+  // Three jobs, three families. Volt is every action. Cart is the basket
+  // and nothing else — one loud colour, spent in one place, which is
+  // what lets it be loud. Mint and Amber are stock, and they are status,
+  // not accent.
 
-  // Secondary brand — kept under the old name for compatibility.
-  static const brandOrange = Color(0xFFF59E0B);
-  static const brandOrangeDark = Color(0xFFD97706);
-  static const brandOrangeLight = Color(0xFFFBBF24);
-  static const brandOrange50 = Color(0xFFFFF7ED);
+  // Volt — actions, links, the warehouse chip.
+  static Color get primary =>
+      ThemeService.isDark ? const Color(0xFF8B7DFF) : const Color(0xFF5B4DF5);
+  static Color get primaryDark =>
+      ThemeService.isDark ? const Color(0xFF7B6BFF) : const Color(0xFF4A3AE0);
+  static Color get primaryLight =>
+      ThemeService.isDark ? const Color(0xFFA99BFF) : const Color(0xFF8B7DFF);
+  static Color get primary50 =>
+      ThemeService.isDark ? const Color(0xFF241F45) : const Color(0xFFF2F0FE);
+  static Color get primary100 =>
+      ThemeService.isDark ? const Color(0xFF2E2857) : const Color(0xFFEDEBFE);
+  static Color get accent => primary;
 
-  // Status — distinct from brand so they read as status, not as accent.
-  static const success = Color(0xFF10B981); // emerald-500 (web)
-  static const warning = Color(0xFFF59E0B); // amber-500
-  static const danger = Color(0xFFEF4444); // red-500
-  static const info = Color(0xFF0EA5E9); // sky-500
+  // Cart — the basket, items already in it, and stock pulled from a
+  // second warehouse. Pink rather than the coral it was drawn as: coral
+  // sits close enough to the error red to be misread as one, and a
+  // basket must never look like a warning.
+  static const cart = Color(0xFFFF3D7F);
+  static Color get cartSoft =>
+      ThemeService.isDark ? const Color(0xFF3A1526) : const Color(0xFFFFE8F0);
 
-  // Surfaces — cool slate grouped background with white card surfaces (web).
+  // Kept under the old names so existing screens keep working.
+  static Color get brandOrange => warning;
+  static Color get brandOrangeDark => warning;
+  static Color get brandOrangeLight => warning;
+  static Color get brandOrange50 =>
+      ThemeService.isDark ? const Color(0xFF3A2A0A) : const Color(0xFFFFF6E5);
+
+  // Status — separate from the accent, so "good" and "brand" never blur.
+  static Color get success =>
+      ThemeService.isDark ? const Color(0xFF2BD9A8) : const Color(0xFF00B07E);
+  static Color get warning =>
+      ThemeService.isDark ? const Color(0xFFFFB93D) : const Color(0xFFE08A00);
+  static Color get danger =>
+      ThemeService.isDark ? const Color(0xFFFF6B6B) : const Color(0xFFDC2626);
+  static Color get info => primary;
+
+  // Surfaces — every neutral leans very slightly violet, so they read as
+  // chosen next to the brand rather than as the grey that came free.
   static Color get bg =>
-      ThemeService.isDark ? const Color(0xFF0B1120) : const Color(0xFFF8FAFC);
+      ThemeService.isDark ? const Color(0xFF0E0C18) : const Color(0xFFF6F5FB);
   static Color get cardBg =>
-      ThemeService.isDark ? const Color(0xFF111827) : const Color(0xFFFFFFFF);
+      ThemeService.isDark ? const Color(0xFF1A1729) : const Color(0xFFFFFFFF);
   static Color get cardElev =>
-      ThemeService.isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
+      ThemeService.isDark ? const Color(0xFF241F38) : const Color(0xFFEFEDF8);
   static Color get border =>
-      ThemeService.isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+      ThemeService.isDark ? const Color(0xFF2E2A44) : const Color(0xFFE4E1F0);
   static Color get divider =>
-      ThemeService.isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
+      ThemeService.isDark ? const Color(0xFF241F38) : const Color(0xFFEFEDF8);
 
-  // Typography — slate ramp matching the web app.
+  // Ink.
   static Color get textPrimary =>
-      ThemeService.isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A);
+      ThemeService.isDark ? const Color(0xFFF3F1FB) : const Color(0xFF141221);
   static Color get textSecondary =>
-      ThemeService.isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569);
+      ThemeService.isDark ? const Color(0xFFC3BEDA) : const Color(0xFF3B3752);
   static Color get textMuted =>
-      ThemeService.isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+      ThemeService.isDark ? const Color(0xFF8B85A6) : const Color(0xFF6F6A87);
   static Color get textSoft =>
-      ThemeService.isDark ? const Color(0xFF475569) : const Color(0xFF94A3B8);
+      ThemeService.isDark ? const Color(0xFF5D5878) : const Color(0xFF9C97B3);
 
   // ── Legacy aliases (preserve compatibility with original references) ──
   static Color get gold => primary;
@@ -699,7 +725,7 @@ ThemeData buildLightTheme() {
       fillColor: AppColors.cardElev,
       hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 14),
       labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-      floatingLabelStyle: const TextStyle(
+      floatingLabelStyle: TextStyle(
         color: AppColors.primary,
         fontWeight: FontWeight.w600,
       ),
@@ -715,15 +741,15 @@ ThemeData buildLightTheme() {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(kRadiusMd),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+        borderSide: BorderSide(color: AppColors.primary, width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(kRadiusMd),
-        borderSide: const BorderSide(color: AppColors.danger, width: 1.0),
+        borderSide: BorderSide(color: AppColors.danger, width: 1.0),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(kRadiusMd),
-        borderSide: const BorderSide(color: AppColors.danger, width: 1.5),
+        borderSide: BorderSide(color: AppColors.danger, width: 1.5),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       isDense: false,
@@ -800,7 +826,7 @@ ThemeData buildLightTheme() {
         fontSize: 13,
         fontWeight: FontWeight.w500,
       ),
-      secondaryLabelStyle: const TextStyle(
+      secondaryLabelStyle: TextStyle(
         color: AppColors.primary,
         fontSize: 13,
         fontWeight: FontWeight.w600,
@@ -1043,7 +1069,7 @@ ThemeData buildDarkTheme() {
       fillColor: AppColors.cardElev,
       hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 14),
       labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
-      floatingLabelStyle: const TextStyle(
+      floatingLabelStyle: TextStyle(
         color: AppColors.primaryLight,
         fontWeight: FontWeight.w600,
       ),
@@ -1059,15 +1085,15 @@ ThemeData buildDarkTheme() {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(kRadiusMd),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+        borderSide: BorderSide(color: AppColors.primary, width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(kRadiusMd),
-        borderSide: const BorderSide(color: AppColors.danger, width: 1.0),
+        borderSide: BorderSide(color: AppColors.danger, width: 1.0),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(kRadiusMd),
-        borderSide: const BorderSide(color: AppColors.danger, width: 1.5),
+        borderSide: BorderSide(color: AppColors.danger, width: 1.5),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       isDense: false,
@@ -1144,7 +1170,7 @@ ThemeData buildDarkTheme() {
         fontSize: 13,
         fontWeight: FontWeight.w500,
       ),
-      secondaryLabelStyle: const TextStyle(
+      secondaryLabelStyle: TextStyle(
         color: AppColors.primaryLight,
         fontSize: 13,
         fontWeight: FontWeight.w600,

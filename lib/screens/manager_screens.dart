@@ -14,9 +14,9 @@ import '../services/approver_delegation.dart';
 // ─────────────────────────────────────────────────────────────────────────
 
 class ManagerHubScreen extends StatelessWidget {
-  const ManagerHubScreen({super.key});
+  ManagerHubScreen({super.key});
 
-  static const _features = <_Feature>[
+  static final _features = <_Feature>[
     _Feature(
       icon: Icons.leaderboard_rounded,
       title: 'ອັນດັບທີມຂາຍ',
@@ -177,7 +177,7 @@ class ManagerHubScreen extends StatelessWidget {
             children: [
               FadeInSlide(
                 child: HeroPanel(
-                  colors: const [AppColors.primaryDark, AppColors.primary],
+                  colors: [AppColors.primaryDark, AppColors.primary],
                   child: Row(
                     children: [
                       Container(
@@ -593,7 +593,7 @@ class _IncentiveReportScreenState extends State<IncentiveReportScreen> {
                                   ),
                                   Text(
                                     row.groupCode == 'AIR' ? 'AIR' : 'CE + SDA',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: AppColors.primary,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -628,7 +628,7 @@ class _IncentiveReportScreenState extends State<IncentiveReportScreen> {
                                   ),
                                   Text(
                                     '${money.format(row.netBonus)} ${snap.data!.currencyCode}',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: AppColors.success,
                                       fontSize: 16,
                                       fontWeight: FontWeight.w900,
@@ -2119,7 +2119,7 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
                                 color: AppColors.primary50,
                                 borderRadius: BorderRadius.circular(kRadiusXl),
                               ),
-                              child: const Text(
+                              child: Text(
                                 'manager',
                                 style: TextStyle(
                                   color: AppColors.primary,

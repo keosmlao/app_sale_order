@@ -408,7 +408,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   if (_loadingMore) ...[
-                                    const SizedBox(
+                                    SizedBox(
                                       width: 14,
                                       height: 14,
                                       child: CircularProgressIndicator(
@@ -628,7 +628,7 @@ class _RedesignedInventoryCard extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.local_offer_rounded,
                       size: 14,
                       color: AppColors.brandOrange,
@@ -636,7 +636,7 @@ class _RedesignedInventoryCard extends StatelessWidget {
                     const SizedBox(width: 4),
                     Text(
                       'ໂປຣ: $promoName',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppColors.brandOrange,
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
@@ -968,7 +968,7 @@ class _ErrorCard extends StatelessWidget {
               color: AppColors.danger.withValues(alpha: 0.14),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.cloud_off,
               color: AppColors.danger,
               size: 26,

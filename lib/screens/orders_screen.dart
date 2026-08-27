@@ -1424,7 +1424,7 @@ class _OrderDetailScreenState extends State<_OrderDetailScreen> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
         ),
-        child: const Row(
+        child: Row(
           children: [
             Icon(Icons.lock_outline, color: AppColors.success, size: 18),
             SizedBox(width: 8),
