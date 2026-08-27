@@ -121,6 +121,47 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     _revision.value++;
   }
 
+  // Extra warehouses a cart line draws from, beyond its primary one.
+  //
+  // A line stays one row for one product: the price, the promotion, the
+  // approved special price and the salesperson are all per product, so
+  // splitting the row would have meant splitting the money path too. What
+  // actually differs per warehouse is only the quantity, the shelf and the
+  // serial — so that is all this holds, and only for the second warehouse
+  // onward. _warehouseByItemCode still names where the line mainly comes
+  // from, and _qtyByCode is still the whole line.
+  //
+  // Empty for almost every line. The bill expands each allocation into its
+  // own order item on submit, because the warehouse is what the stock
+  // movement needs.
+  final Map<String, List<_ExtraAllocation>> _extraAllocByCode = {};
+
+  // Bring the other warehouses back inside the line after it shrinks.
+  //
+  // Taking the quantity down below what the extras add up to would leave
+  // the bill asking for more units than the line sells — the primary
+  // warehouse's share goes to zero first, then the extras give ground
+  // newest first, because the last one added is the one the cashier is
+  // most likely undoing.
+  void _trimExtraAllocations(String code, int total) {
+    final list = _extraAllocByCode[code];
+    if (list == null || list.isEmpty) return;
+    var allowed = total;
+    for (var i = list.length - 1; i >= 0; i--) {
+      if (allowed <= 0) {
+        list.removeAt(i);
+        continue;
+      }
+      if (list[i].qty > allowed) list[i].qty = allowed;
+      allowed -= list[i].qty;
+    }
+    if (list.isEmpty) _extraAllocByCode.remove(code);
+  }
+
+  // How much of a line is already accounted for elsewhere.
+  int _extraQtyFor(String code) =>
+      (_extraAllocByCode[code] ?? const []).fold<int>(0, (a, b) => a + b.qty);
+
   // The warehouse the last line was taken from. A bill is usually picked
   // from one place, so the next item leads with it — the counter should
   // not re-answer the same question for every line — while every other
@@ -1195,6 +1236,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     if (qty <= 0) {
       setState(() {
         _qtyByCode.remove(item.code);
+        _extraAllocByCode.remove(item.code);
         _serialByItemCode.remove(item.code);
         _warehouseByItemCode.remove(item.code);
         _locationByItemCode.remove(item.code);
@@ -1321,13 +1363,16 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         await _refreshStockForCodes([item.code], force: true);
         if (!mounted) return false;
       }
-      final cap = _itemStock(item).floor();
-      if (cap >= 0 && qty > cap) {
+      // What the line may reach: its own shelf, plus anything already
+      // being taken from other warehouses for it.
+      final cap = _itemStock(item).floor() + _extraQtyFor(item.code);
+      if (_itemStock(item) >= 0 && qty > cap) {
         final moved = await _offerWarehouseWithStock(item, qty, cap);
         if (!mounted) return false;
         if (moved) {
-          // A new warehouse is pinned; its stock decides the cap now.
-          final newCap = _itemStock(item).floor();
+          // Either the line moved, or another warehouse is now covering
+          // part of it — re-read what it may reach.
+          final newCap = _itemStock(item).floor() + _extraQtyFor(item.code);
           if (newCap >= 0 && qty > newCap) {
             qty = newCap;
             _toast('ສາງນີ້ມີ $newCap ${item.unitName?.trim() ?? 'ອັນ'}');
@@ -1350,7 +1395,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       if (!_items.any((p) => p.code == item.code) && item.companyBalance > 0) {
         _items = [..._items, item];
       }
-      _qtyByCode[item.code] = qty < 1 ? 1 : qty;
+      final finalQty = qty < 1 ? 1 : qty;
+      _qtyByCode[item.code] = finalQty;
+      _trimExtraAllocations(item.code, finalQty);
       _recomputePromotions();
     });
     // Check BOGO promos after the qty change so any newly-met trigger
@@ -1414,9 +1461,60 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     if (picked == null || !mounted) return false;
     _lastPickedWarehouseCode = picked.warehouse.code;
 
+    // Two ways out of a short line, and the counter picks: move the whole
+    // line to the chosen warehouse, or leave what is here and take the
+    // rest from there as well. A warehouse that cannot cover the whole
+    // quantity can only be added to — moving there would just be short
+    // again somewhere else.
+    final short = picked.stock.floor() < wanted;
+    final action = await _askSplitOrMove(
+      item: item,
+      warehouse: picked.warehouse,
+      wanted: wanted,
+      here: here,
+      moveAllowed: !short,
+    );
+    if (action == null || !mounted) return false;
+
+    if (action == _StockFix.add) {
+      final take = (wanted - here).clamp(1, picked.stock.floor());
+      // Storefront stock goes out unit by unit, and that is as true of a
+      // part-line as of a whole one.
+      final unit = await _chooseSerial(item, picked.warehouse.code);
+      if (!mounted) return false;
+      setState(() {
+        final list = _extraAllocByCode.putIfAbsent(
+          item.code,
+          () => <_ExtraAllocation>[],
+        );
+        // Same warehouse twice is one allocation, not two rows saying the
+        // same thing.
+        final existing = list.indexWhere(
+          (a) => a.warehouse.code == picked.warehouse.code,
+        );
+        if (existing >= 0) {
+          list[existing].qty += take;
+        } else {
+          list.add(
+            _ExtraAllocation(
+              warehouse: picked.warehouse,
+              location: picked.location,
+              qty: take,
+              serialNo: unit?.sn,
+              serialIsn: unit?.isn,
+            ),
+          );
+        }
+      });
+      return true;
+    }
+
     await _maybePickSerial(item, picked.warehouse.code);
     if (!mounted) return false;
     setState(() {
+      // Moving replaces the line's source, so anything taken from
+      // elsewhere for it no longer applies.
+      _extraAllocByCode.remove(item.code);
       _warehouseByItemCode[item.code] = picked.warehouse;
       _locationByItemCode[item.code] = picked.location;
       final locationCode = picked.location.location?.trim() ?? '';
@@ -1427,6 +1525,131 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       };
     });
     return true;
+  }
+
+  // Ask which of the two fixes the cashier wants. Returns null if they
+  // backed out. When the chosen warehouse cannot cover the whole line
+  // there is only one honest option, so it is taken without asking.
+  Future<_StockFix?> _askSplitOrMove({
+    required InventoryItem item,
+    required Warehouse warehouse,
+    required int wanted,
+    required int here,
+    required bool moveAllowed,
+  }) async {
+    if (!moveAllowed) return _StockFix.add;
+    final take = wanted - here;
+    return showModalBottomSheet<_StockFix>(
+      context: context,
+      constraints: _sheetConstraints(context),
+      backgroundColor: AppColors.cardBg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                warehouse.name.trim().isNotEmpty
+                    ? warehouse.name
+                    : 'ສາງ ${warehouse.code}',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                item.nameLo,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: kSpace4),
+              _fixOption(
+                ctx,
+                value: _StockFix.move,
+                icon: Icons.swap_horiz_rounded,
+                title: 'ຍ້າຍໄປສາງນີ້ທັງໝົດ',
+                detail: 'ເອົາ $wanted ຈາກສາງນີ້ບ່ອນດຽວ',
+                accent: AppColors.primary,
+              ),
+              const SizedBox(height: 10),
+              _fixOption(
+                ctx,
+                value: _StockFix.add,
+                icon: Icons.add_business_rounded,
+                title: 'ເພີ່ມສາງນີ້ອີກສາງ',
+                detail: here > 0
+                    ? 'ສາງເກົ່າ $here + ສາງນີ້ $take'
+                    : 'ເອົາ $take ຈາກສາງນີ້',
+                accent: AppColors.success,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _fixOption(
+    BuildContext ctx, {
+    required _StockFix value,
+    required IconData icon,
+    required String title,
+    required String detail,
+    required Color accent,
+  }) {
+    return Material(
+      color: accent.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(kRadiusMd),
+      child: InkWell(
+        onTap: () => Navigator.of(ctx).pop(value),
+        borderRadius: BorderRadius.circular(kRadiusMd),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          child: Row(
+            children: [
+              Icon(icon, color: accent, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      detail,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _pickWarehouseForLine(InventoryItem item) async {
@@ -1473,16 +1696,28 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     InventoryItem item,
     String warehouseCode,
   ) async {
-    if (warehouseCode != kStorefrontWarehouse) return;
+    final picked = await _chooseSerial(item, warehouseCode);
+    if (picked != null && mounted) {
+      setState(() => _serialByItemCode[item.code] = picked);
+    }
+  }
+
+  // The chooser on its own, so a part-line taken from a second warehouse
+  // can name its unit without overwriting the one the main line holds.
+  Future<SerialUnit?> _chooseSerial(
+    InventoryItem item,
+    String warehouseCode,
+  ) async {
+    if (warehouseCode != kStorefrontWarehouse) return null;
     List<SerialUnit> units;
     try {
       units = await AppScope.of(
         context,
       ).api.fetchSerials(code: item.code, warehouse: warehouseCode);
     } catch (_) {
-      return; // not knowing the serial must not stop the sale
+      return null; // not knowing the serial must not stop the sale
     }
-    if (!mounted || units.isEmpty) return;
+    if (!mounted || units.isEmpty) return null;
 
     final picked = await showModalBottomSheet<SerialUnit>(
       context: context,
@@ -1613,9 +1848,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       ),
     );
 
-    if (picked != null && mounted) {
-      setState(() => _serialByItemCode[item.code] = picked);
-    }
+    return picked;
   }
 
   Future<_PickedWarehouseStock?> _promptWarehouseForItem(
@@ -2029,23 +2262,61 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       final sp = _selectedSalesperson;
       final delivery = _selectedDelivery!;
 
-      final items = _qtyByCode.entries
-          .where((entry) => _itemByCode(entry.key) != null)
-          .map(
-            (entry) => (
-              productId: entry.key,
-              quantity: entry.value,
-              warehouseCode: _warehouseByItemCode[entry.key]?.code,
-              locationCode: _locationByItemCode[entry.key]?.location,
-              // Per-line override → backend prefers this over the cart-
-              // level salespersonCode for that one line.
-              salespersonCode: _salespersonByItemCode[entry.key]?.employeeCode,
-              // The unit chosen off the storefront shelf, if any.
-              serialNo: _serialByItemCode[entry.key]?.sn,
-              serialIsn: _serialByItemCode[entry.key]?.isn,
-            ),
-          )
-          .toList();
+      // One order item per (product, warehouse). A line drawing on two
+      // warehouses is one row in the cart and two movements on the bill —
+      // the stock has to come off the shelf it is actually standing on.
+      final items =
+          <
+            ({
+              String productId,
+              int quantity,
+              String? warehouseCode,
+              String? locationCode,
+              String? salespersonCode,
+              String? serialNo,
+              String? serialIsn,
+            })
+          >[];
+      for (final entry in _qtyByCode.entries) {
+        final code = entry.key;
+        if (_itemByCode(code) == null) continue;
+        final extras = _extraAllocByCode[code] ?? const <_ExtraAllocation>[];
+        // The line's quantity is the truth; the split only says where it
+        // comes from. Anything that does not fit is dropped rather than
+        // billed.
+        var remaining = entry.value;
+        final primaryQty = entry.value - _extraQtyFor(code);
+        // Per-line override → backend prefers this over the cart-level
+        // salespersonCode for that one line.
+        final sellerCode = _salespersonByItemCode[code]?.employeeCode;
+        if (primaryQty > 0) {
+          remaining -= primaryQty;
+          items.add((
+            productId: code,
+            quantity: primaryQty,
+            warehouseCode: _warehouseByItemCode[code]?.code,
+            locationCode: _locationByItemCode[code]?.location,
+            salespersonCode: sellerCode,
+            // The unit chosen off the storefront shelf, if any.
+            serialNo: _serialByItemCode[code]?.sn,
+            serialIsn: _serialByItemCode[code]?.isn,
+          ));
+        }
+        for (final extra in extras) {
+          if (remaining <= 0) break;
+          final take = extra.qty < remaining ? extra.qty : remaining;
+          remaining -= take;
+          items.add((
+            productId: code,
+            quantity: take,
+            warehouseCode: extra.warehouse.code,
+            locationCode: extra.location.location,
+            salespersonCode: sellerCode,
+            serialNo: extra.serialNo,
+            serialIsn: extra.serialIsn,
+          ));
+        }
+      }
       // Standalone special prices are now requested from the dedicated
       // "Price Request" menu before the cart is even started. The server
       // looks up approved (customer, item) pairs at order-create time and
@@ -3727,6 +3998,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   void _resetForNextSale() {
     setState(() {
       _qtyByCode.clear();
+      _extraAllocByCode.clear();
       _warehouseByItemCode.clear();
       _locationByItemCode.clear();
       _approvedPriceByCode.clear();
@@ -3895,6 +4167,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       if (i > 0) {
         rows.add(Divider(height: 1, color: AppColors.divider));
       }
+      final extras = _extraAllocByCode[p.code] ?? const <_ExtraAllocation>[];
       rows.add(
         _SelectedRow(
           item: p,
@@ -3946,8 +4219,96 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           },
         ),
       );
+      // Where the rest of the line is coming from. Only drawn when the
+      // line reaches past its own warehouse, which is rare — but when it
+      // happens the counter has to be able to see it, or they will pick
+      // the whole quantity off one shelf.
+      if (extras.isNotEmpty) {
+        final primary = qty - _extraQtyFor(p.code);
+        rows.add(
+          Padding(
+            padding: const EdgeInsets.only(top: 6, bottom: 2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _allocRow(
+                  _warehouseLabel(_warehouseByItemCode[p.code]),
+                  primary,
+                  onRemove: null,
+                ),
+                for (final extra in extras)
+                  _allocRow(
+                    _warehouseLabel(extra.warehouse),
+                    extra.qty,
+                    onRemove: () async {
+                      setState(() {
+                        final list = _extraAllocByCode[p.code];
+                        list?.remove(extra);
+                        if (list != null && list.isEmpty) {
+                          _extraAllocByCode.remove(p.code);
+                        }
+                      });
+                      // The line is smaller by what was taken away.
+                      await _setQty(p, qty - extra.qty);
+                      refresh();
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      }
     }
     return rows;
+  }
+
+  // "ສາງຂົວຫຼວງ 1(ໜ້າຮ້ານ…)" is most of a narrow row; the code and the
+  // first words carry it.
+  String _warehouseLabel(Warehouse? wh) {
+    if (wh == null) return '—';
+    final name = wh.name.trim();
+    if (name.isEmpty || name == wh.code) return 'ສາງ ${wh.code}';
+    return '${wh.code} · $name';
+  }
+
+  Widget _allocRow(String label, int qty, {Future<void> Function()? onRemove}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Icon(Icons.warehouse_outlined, size: 13, color: AppColors.textMuted),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+            ),
+          ),
+          Text(
+            '× $qty',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          if (onRemove != null)
+            IconButton(
+              onPressed: () => unawaited(onRemove()),
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              padding: EdgeInsets.zero,
+              icon: Icon(
+                Icons.close_rounded,
+                size: 14,
+                color: AppColors.textMuted,
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   // ── Inline product search ─────────────────────────────────────────────
@@ -7193,3 +7554,24 @@ class _ResultDialog extends StatelessWidget {
     );
   }
 }
+
+// Part of a cart line taken from a warehouse other than the line's
+// primary one. See _extraAllocByCode.
+class _ExtraAllocation {
+  _ExtraAllocation({
+    required this.warehouse,
+    required this.location,
+    required this.qty,
+    this.serialNo,
+    this.serialIsn,
+  });
+
+  final Warehouse warehouse;
+  final StockLocation location;
+  int qty;
+  final String? serialNo;
+  final String? serialIsn;
+}
+
+// What to do about a line whose warehouse is short.
+enum _StockFix { move, add }
