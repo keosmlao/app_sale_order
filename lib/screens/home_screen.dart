@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../app_theme.dart';
 import '../services/presence.dart';
 import 'inventory_screen.dart';
+import 'manager_screens.dart';
 import 'my_dashboard_screen.dart';
 import 'orders_screen.dart';
 import 'profile_screen.dart';
@@ -30,6 +31,31 @@ class _NavTab {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
+
+  // Sell, stock, promotions — the three things a counter tablet does.
+  static const _tabletTabs = <_NavTab>[
+    _NavTab(
+      title: 'Sale Order',
+      label: 'ຂາຍ',
+      icon: Icons.receipt_long_outlined,
+      activeIcon: Icons.receipt_long_rounded,
+      page: OrdersScreen(),
+    ),
+    _NavTab(
+      title: 'ສິນຄ້າຄົງເຫຼືອ',
+      label: 'ສິນຄ້າ',
+      icon: Icons.inventory_2_outlined,
+      activeIcon: Icons.inventory_2_rounded,
+      page: InventoryScreen(),
+    ),
+    _NavTab(
+      title: 'ໂປຣໂມຊັນ',
+      label: 'ໂປຣ',
+      icon: Icons.local_offer_outlined,
+      activeIcon: Icons.local_offer_rounded,
+      page: PromotionManagementScreen(),
+    ),
+  ];
 
   static const _tabs = <_NavTab>[
     _NavTab(
@@ -83,21 +109,26 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final safeIndex = _index >= _tabs.length ? 0 : _index;
     final useRail = isTablet(context);
+    // The tablet is a counter till, not a personal device: it sells, checks
+    // stock and looks up promotions. The dashboard and profile are for the
+    // phone in someone's pocket, so they are not offered here — one fewer
+    // way to end up on the wrong screen mid-sale.
+    final tabs = useRail ? _tabletTabs : _tabs;
+    final safeIndex = _index >= tabs.length ? 0 : _index;
     // Tabs 0 (dashboard), 1 (orders) and 2 (inventory) render their own custom
     // headers inline, so only the profile tab keeps the shared app bar.
     final showAppBar = safeIndex != 0 && safeIndex != 1 && safeIndex != 2;
 
     final stack = IndexedStack(
       index: safeIndex,
-      children: _tabs.map((t) => t.page).toList(),
+      children: tabs.map((t) => t.page).toList(),
     );
 
     if (useRail) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: showAppBar ? _appBar(_tabs[safeIndex].title) : null,
+        appBar: showAppBar ? _appBar(tabs[safeIndex].title) : null,
         body: SafeArea(
           top: !showAppBar,
           bottom: false,
@@ -105,7 +136,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _SideRail(
                 index: safeIndex,
-                items: _tabs
+                items: tabs
                     .map(
                       (t) => (
                         icon: t.icon,
@@ -126,7 +157,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: AppColors.bg,
       extendBody: false,
-      appBar: showAppBar ? _appBar(_tabs[safeIndex].title) : null,
+      appBar: showAppBar ? _appBar(tabs[safeIndex].title) : null,
       body: SafeArea(
         top: !showAppBar,
         bottom: false,
@@ -134,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       bottomNavigationBar: _HomeBottomNav(
         index: safeIndex,
-        items: _tabs
+        items: tabs
             .map(
               (t) => (icon: t.icon, activeIcon: t.activeIcon, label: t.label),
             )

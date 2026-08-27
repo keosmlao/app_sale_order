@@ -4,6 +4,7 @@ import 'app_theme.dart';
 import 'config.dart';
 import 'services/api.dart';
 import 'services/auth.dart';
+import 'services/app_update.dart';
 import 'services/notifications.dart';
 import 'services/presence.dart';
 import 'screens/login_screen.dart';
@@ -112,17 +113,32 @@ class _Bootstrap extends StatefulWidget {
 }
 
 class _BootstrapState extends State<_Bootstrap> {
-  Future<bool>? _future;
+  Future<_Boot>? _future;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _future ??= AppScope.of(context).auth.tryRestore();
+    _future ??= _boot();
+  }
+
+  // Restore the session and ask the server what build it expects, in
+  // parallel — neither waits on the other, and the update check never
+  // fails the boot.
+  Future<_Boot> _boot() async {
+    final scope = AppScope.of(context);
+    final results = await Future.wait([
+      scope.auth.tryRestore(),
+      AppUpdateService.instance.mandatoryUpdate(scope.api.baseUrl),
+    ]);
+    return _Boot(
+      signedIn: results[0] == true,
+      update: results[1] is AppRelease ? results[1] as AppRelease : null,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<bool>(
+    return FutureBuilder<_Boot>(
       future: _future,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
@@ -130,8 +146,24 @@ class _BootstrapState extends State<_Bootstrap> {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        return snap.data == true ? const HomeScreen() : const LoginScreen();
+        final boot = snap.data;
+        // A build below the server's floor cannot be trusted against it, so
+        // it goes no further — signed in or not.
+        final update = boot?.update;
+        if (update != null) {
+          return ForcedUpdateScreen(
+            release: update,
+            baseUrl: AppScope.of(context).api.baseUrl,
+          );
+        }
+        return boot?.signedIn == true ? const HomeScreen() : const LoginScreen();
       },
     );
   }
+}
+
+class _Boot {
+  const _Boot({required this.signedIn, required this.update});
+  final bool signedIn;
+  final AppRelease? update;
 }
