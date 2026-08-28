@@ -2078,17 +2078,25 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       context: context,
       constraints: _sheetConstraints(context),
       isScrollControlled: true,
-      // Nothing goes on a bill until this is answered — the pay bar just
-      // says ເລືອກລູກຄ້າກ່ອນ — so the question takes the screen and dims
-      // what is behind it instead of sharing space with the answer it is
-      // blocking.
-      barrierColor: Colors.black.withValues(alpha: 0.62),
+      // On a phone this takes the screen: nothing goes on a bill until it
+      // is answered — the pay bar just reads ເລືອກລູກຄ້າກ່ອນ — and at three
+      // quarters height it left a strip of cart showing, enough to look
+      // dismissable and not enough to use.
+      //
+      // A wide screen keeps the old sheet. There the picker is already
+      // capped to 560px and centred, with the cart legible on either side;
+      // blacking all of that out to ask one question is a phone habit
+      // applied where the room exists to avoid it.
+      barrierColor: Colors.black.withValues(
+        alpha: isTablet(context) ? 0.4 : 0.62,
+      ),
       useSafeArea: true,
       backgroundColor: AppColors.bg,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => _CustomerPickerSheet(
+        fullHeight: !isTablet(context),
         customers: _customers,
         // PC and salesperson can pick but not create. Backend also enforces.
         onCreate: canCreate
@@ -5667,8 +5675,15 @@ typedef _CreateCustomerFn =
     });
 
 class _CustomerPickerSheet extends StatefulWidget {
-  const _CustomerPickerSheet({required this.customers, this.onCreate});
+  const _CustomerPickerSheet({
+    required this.customers,
+    this.onCreate,
+    this.fullHeight = true,
+  });
   final List<Customer> customers;
+  // Phones open this at the full height of the screen; wider screens keep
+  // the sheet they had, with the cart still readable beside it.
+  final bool fullHeight;
   // Null when the current user lacks the head/manager role — the picker then
   // hides the "+ ສ້າງ" button entirely instead of showing it disabled.
   final _CreateCustomerFn? onCreate;
@@ -5756,12 +5771,9 @@ class _CustomerPickerSheetState extends State<_CustomerPickerSheet> {
     final pointsFmt = NumberFormat('#,###', 'en_US');
 
     return DraggableScrollableSheet(
-      // Opens at full height. It was three quarters, which left a strip of
-      // the cart showing under it — enough to look dismissable, not enough
-      // to be useful.
-      initialChildSize: 1,
-      maxChildSize: 1,
-      minChildSize: 0.5,
+      initialChildSize: widget.fullHeight ? 1 : 0.75,
+      maxChildSize: widget.fullHeight ? 1 : 0.95,
+      minChildSize: widget.fullHeight ? 0.5 : 0.4,
       expand: false,
       builder: (_, controller) => Column(
         children: [
