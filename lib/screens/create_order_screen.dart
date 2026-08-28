@@ -1778,6 +1778,13 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       );
       return;
     }
+    // Every numbered unit on this shelf is already on the line. The line
+    // is short only because the rest were never given a number — there is
+    // nothing to ask, so don't open a sheet that cannot be answered.
+    if (held.length >= units.length) {
+      setState(() => _serialsByItemCode[item.code] = held);
+      return;
+    }
 
     final chosen = await _chooseSerials(
       item: item,
@@ -1884,7 +1891,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     ),
                   ),
                   IconButton(
-                    onPressed: () => Navigator.of(ctx).pop(),
+                    // Keep what was ticked. Each tap commits on the web,
+                    // so closing here must not throw the picks away.
+                    onPressed: () => Navigator.of(ctx).pop([...chosen]),
                     icon: const Icon(Icons.close_rounded),
                   ),
                 ],
@@ -1991,34 +2000,64 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               ),
             ),
             if (wanted > 1)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  kSpace3,
-                  0,
-                  kSpace3,
-                  kSpace3,
-                ),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: chosen.length == wanted
-                        ? () => Navigator.of(ctx).pop([...chosen])
-                        : null,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      padding: const EdgeInsets.symmetric(vertical: kSpace3),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(kRadiusMd),
-                      ),
+              Builder(
+                builder: (_) {
+                  // The shelf can hold fewer numbered units than the line
+                  // is selling — plenty of stock was never given an ISN.
+                  // When every unit on offer is ticked there is nothing
+                  // left to decide, so the button has to let them out;
+                  // blocking on a count that can never be reached is a
+                  // dead end with a customer waiting.
+                  final short = units.length < wanted;
+                  final done =
+                      chosen.length >= wanted || chosen.length >= units.length;
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      kSpace3,
+                      0,
+                      kSpace3,
+                      kSpace3,
                     ),
-                    child: Text(
-                      chosen.length == wanted
-                          ? 'ຢືນຢັນ'
-                          : 'ເລືອກອີກ ${wanted - chosen.length} ເຄື່ອງ',
-                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (short) ...[
+                          Text(
+                            'ສາງນີ້ມີເລກເຄື່ອງພຽງ ${units.length} ຈາກ $wanted '
+                            '— ສ່ວນທີ່ເຫຼືອບໍ່ມີເລກໃນລະບົບ',
+                            style: TextStyle(
+                              fontSize: 11,
+                              height: 1.35,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.warning,
+                            ),
+                          ),
+                          const SizedBox(height: kSpace2),
+                        ],
+                        FilledButton(
+                          onPressed: done
+                              ? () => Navigator.of(ctx).pop([...chosen])
+                              : null,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: kSpace3,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(kRadiusMd),
+                            ),
+                          ),
+                          child: Text(
+                            done
+                                ? 'ຢືນຢັນ'
+                                : 'ເລືອກອີກ ${wanted - chosen.length} ເຄື່ອງ',
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
           ],
         ),
