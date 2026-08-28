@@ -2078,6 +2078,12 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       context: context,
       constraints: _sheetConstraints(context),
       isScrollControlled: true,
+      // Nothing goes on a bill until this is answered — the pay bar just
+      // says ເລືອກລູກຄ້າກ່ອນ — so the question takes the screen and dims
+      // what is behind it instead of sharing space with the answer it is
+      // blocking.
+      barrierColor: Colors.black.withValues(alpha: 0.62),
+      useSafeArea: true,
       backgroundColor: AppColors.bg,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -5750,9 +5756,12 @@ class _CustomerPickerSheetState extends State<_CustomerPickerSheet> {
     final pointsFmt = NumberFormat('#,###', 'en_US');
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.75,
-      maxChildSize: 0.95,
-      minChildSize: 0.4,
+      // Opens at full height. It was three quarters, which left a strip of
+      // the cart showing under it — enough to look dismissable, not enough
+      // to be useful.
+      initialChildSize: 1,
+      maxChildSize: 1,
+      minChildSize: 0.5,
       expand: false,
       builder: (_, controller) => Column(
         children: [
