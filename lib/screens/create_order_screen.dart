@@ -1840,6 +1840,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     required List<SerialUnit> held,
     required int wanted,
   }) async {
+    // The running selection lives out here, not inside the builder: the
+    // builder re-runs on every tap, and a list rebuilt from `held` each
+    // time threw away the tick that caused the rebuild. Nothing after the
+    // first one could be selected.
+    final chosen = <SerialUnit>[...held];
     final picked = await showModalBottomSheet<List<SerialUnit>>(
       context: context,
       constraints: _sheetConstraints(context),
@@ -1850,7 +1855,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) {
-          final chosen = <SerialUnit>[...held];
           return SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
