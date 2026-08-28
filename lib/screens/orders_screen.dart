@@ -695,10 +695,19 @@ class _OrderRow extends StatelessWidget {
     final docLabel = order.docNo?.trim().isNotEmpty == true
         ? order.docNo!
         : '#${order.id.toUpperCase()}';
+    final customer = order.customer?.name.trim() ?? '';
+    final hasCustomer = customer.isNotEmpty && customer != '—';
+    // The bill number leads when there is no customer on file. A row whose
+    // first line reads "—" spends its most readable line saying nothing.
+    final headline = hasCustomer ? customer : docLabel;
+    final waited = order.status == 'PENDING'
+        ? _waitedLabel(order.createdAt)
+        : null;
+
     return Material(
       color: AppColors.cardBg,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(kRadiusMd),
+        borderRadius: BorderRadius.circular(kRadiusLg),
         side: BorderSide(color: AppColors.border, width: 1),
       ),
       clipBehavior: Clip.antiAlias,
@@ -711,48 +720,35 @@ class _OrderRow extends StatelessWidget {
               Container(width: 4, color: statusColor),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                  padding: const EdgeInsets.fromLTRB(14, 12, 10, 13),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // Who and what state, on one line.
                       Row(
                         children: [
                           Expanded(
                             child: Text(
-                              order.customer?.name ?? '—',
+                              headline,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: AppColors.textPrimary,
                                 fontSize: 15,
-                                fontWeight: FontWeight.w700,
+                                fontWeight: FontWeight.w800,
                                 height: 1.25,
-                                letterSpacing: -0.1,
+                                letterSpacing: -0.15,
+                                fontFeatures: hasCustomer
+                                    ? null
+                                    : kTabularFigures,
                               ),
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: statusColor.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              statusLabel,
-                              style: TextStyle(
-                                color: statusColor,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
+                          _StatusBadge(color: statusColor, label: statusLabel),
                           if (order.source != null) ...[
-                            const SizedBox(width: 6),
+                            const SizedBox(width: 5),
                             _SourceChip(source: order.source!),
                           ],
                           // Edit and delete live on the row, not two taps
@@ -760,54 +756,93 @@ class _OrderRow extends StatelessWidget {
                           // gets fixed, and it is fixed from the list the
                           // seller is already looking at.
                           if (onEdit != null || onDelete != null)
-                            _RowActions(onEdit: onEdit, onDelete: onDelete),
+                            _RowActions(onEdit: onEdit, onDelete: onDelete)
+                          else
+                            const SizedBox(width: 4),
                         ],
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 10),
+                      // The figure carries the row. It is what gets read
+                      // out, checked against a slip, and searched for.
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.baseline,
                         textBaseline: TextBaseline.alphabetic,
                         children: [
-                          Expanded(
-                            child: Text(
-                              docLabel,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: AppColors.textMuted,
-                                fontSize: 12,
-                                fontFamily: 'monospace',
-                                fontWeight: FontWeight.w500,
-                                letterSpacing: 0.2,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
                           Text(
                             fmt.format(order.total),
                             style: TextStyle(
                               color: AppColors.textPrimary,
-                              fontSize: 16,
+                              fontSize: 22,
                               fontWeight: FontWeight.w900,
                               height: 1,
-                              letterSpacing: -0.2,
+                              letterSpacing: -0.6,
                               fontFeatures: kTabularFigures,
                             ),
                           ),
-                          const SizedBox(width: 3),
+                          const SizedBox(width: 4),
                           Text(
                             'ກີບ',
                             style: TextStyle(
                               color: AppColors.textMuted,
-                              fontSize: 10.5,
+                              fontSize: 11,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
+                          const Spacer(),
+                          // How long someone has been waiting on this
+                          // bill — past a quarter of an hour there is
+                          // probably a person standing at the counter.
+                          if (waited != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: (waited.late
+                                        ? AppColors.danger
+                                        : AppColors.textMuted)
+                                    .withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(
+                                  kRadiusPill,
+                                ),
+                              ),
+                              child: Text(
+                                waited.text,
+                                style: TextStyle(
+                                  color: waited.late
+                                      ? AppColors.danger
+                                      : AppColors.textSecondary,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
                         ],
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 9),
+                      // Everything else, quiet and on one line: the bill
+                      // number (unless it is already the headline), who
+                      // sold it, and when.
                       Row(
                         children: [
+                          if (hasCustomer) ...[
+                            Flexible(
+                              child: Text(
+                                docLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.2,
+                                  fontFeatures: kTabularFigures,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                          ],
                           if (order.salesperson != null) ...[
                             Icon(
                               Icons.person_outline,
@@ -827,15 +862,8 @@ class _OrderRow extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 8),
                           ],
                           const Spacer(),
-                          Icon(
-                            Icons.event_outlined,
-                            size: 11,
-                            color: AppColors.textMuted,
-                          ),
-                          const SizedBox(width: 3),
                           Text(
                             dateFmt.format(order.createdAt.toLocal()),
                             style: TextStyle(
@@ -857,6 +885,23 @@ class _OrderRow extends StatelessWidget {
       ),
     );
   }
+}
+
+// How long a bill has been waiting, in the words someone at the counter
+// would use.
+class _Waited {
+  const _Waited(this.text, this.late);
+  final String text;
+  final bool late;
+}
+
+_Waited _waitedLabel(DateTime createdAt) {
+  final mins = DateTime.now().difference(createdAt).inMinutes;
+  if (mins < 1) return const _Waited('ຫາກໍ່ສ້າງ', false);
+  if (mins < 60) return _Waited('ລໍຖ້າ $mins ນາທີ', mins >= 15);
+  final hrs = mins ~/ 60;
+  if (hrs < 24) return _Waited('ລໍຖ້າ $hrs ຊົ່ວໂມງ', true);
+  return _Waited('ລໍຖ້າ ${hrs ~/ 24} ມື້', true);
 }
 
 class _StatusBadge extends StatelessWidget {
