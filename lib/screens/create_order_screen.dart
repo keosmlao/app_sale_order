@@ -4108,10 +4108,14 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       onRefresh: () => _fetchCatalog(_query.trim()),
       child: LayoutBuilder(
         builder: (context, box) {
-          // Four across a tablet, two across a phone: on a 400px screen a
-          // third column leaves each tile ~120px, which is not enough for
-          // a photo and a product name that means anything.
-          final columns = isTablet(context) ? 4 : 2;
+          // Six across a tablet held landscape, four upright, two on a
+          // phone. The counter's tablet is landscape on its stand, and at
+          // ~1280px six tiles still leave each one about 200px — enough
+          // for a photo and a name — while showing half again as much of
+          // the shelf without scrolling. On a 400px phone a third column
+          // would leave ~120px, which is not enough for either.
+          final landscape = box.maxWidth > box.maxHeight;
+          final columns = isTablet(context) ? (landscape ? 6 : 4) : 2;
           return NotificationListener<ScrollNotification>(
             // Fetch the next page a screen before the end, so the grid
             // keeps scrolling rather than stopping at a spinner.
@@ -4133,8 +4137,14 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 mainAxisSpacing: 12,
                 crossAxisSpacing: 12,
                 // Taller than the text-only tile was: the photo is the top
-                // half of the card now.
-                mainAxisExtent: isTablet(context) ? 236 : 200,
+                // half of the card now. Six narrower tiles need less of it
+                // — the photo is square, so the card's height follows its
+                // width or the picture floats in a tall empty box.
+                mainAxisExtent: !isTablet(context)
+                    ? 200
+                    : columns >= 6
+                    ? 214
+                    : 236,
               ),
               // One extra cell at the end while a page is in flight, so the
               // grid says it is still coming instead of looking finished.
