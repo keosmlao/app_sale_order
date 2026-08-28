@@ -4171,6 +4171,13 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     // out-of-stock and disabled the whole catalogue.
     final stock = p.salesBalance;
     final price = _unitPrice(p);
+    // What this customer actually pays. A member's discount is decided the
+    // moment they are picked, so the shelf price on the tile is not the
+    // price — showing the list price and only revealing the discount in
+    // the cart makes the counter quote a number the bill then contradicts.
+    final pct = _discountPct;
+    final net = pct > 0 ? price * (1 - pct / 100) : price;
+    final discounted = pct > 0 && price > 0;
     final out = !p.hasSet && stock <= 0;
     final low = !out && stock > 0 && stock <= 5;
     final inCart = qty > 0;
@@ -4236,7 +4243,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                         children: [
                           Flexible(
                             child: Text(
-                              _moneyFmt.format(price),
+                              _moneyFmt.format(net),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -4245,7 +4252,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                                 fontWeight: FontWeight.w900,
                                 letterSpacing: -0.3,
                                 fontFeatures: kTabularFigures,
-                                color: AppColors.primaryDark,
+                                color: discounted
+                                    ? AppColors.cart
+                                    : AppColors.primaryDark,
                               ),
                             ),
                           ),
@@ -4290,6 +4299,52 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     ),
                   ],
                 ),
+                // The list price stays visible, struck through: the
+                // customer is being shown what they saved, not just a
+                // smaller number they have no way to judge.
+                if (discounted) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          _moneyFmt.format(price),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            height: 1.2,
+                            fontWeight: FontWeight.w600,
+                            fontFeatures: kTabularFigures,
+                            color: AppColors.textMuted,
+                            decoration: TextDecoration.lineThrough,
+                            decorationColor: AppColors.textMuted,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.cart.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(kRadiusPill),
+                        ),
+                        child: Text(
+                          '-${_pctLabel(pct)}%',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w900,
+                            height: 1.35,
+                            color: AppColors.cart,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -4297,6 +4352,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       ),
     );
   }
+
+  // 3, not 3.0; 2.5 stays 2.5.
+  static String _pctLabel(double pct) =>
+      pct == pct.roundToDouble() ? pct.toInt().toString() : pct.toString();
 
   // Empty the bill and start again, keeping what the counter would keep:
   // the catalogue it has already loaded, the warehouse list, the delivery
