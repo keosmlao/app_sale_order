@@ -1742,16 +1742,24 @@ class SerialUnit {
     required this.rack,
   });
 
-  final String sn;
+  /// ODIEN's own tag — what the movement ledger tracks and what the shop
+  /// floor writes down. Present for 807 of the 852 units standing in
+  /// warehouse 1101; the factory serial below is present far less often.
   final String? isn;
+
+  /// The factory serial, from sn_inventory.sn. Often absent.
+  final String sn;
   final String? location;
   final String? rack;
 
   bool get hasIsn => isn != null && isn!.isNotEmpty;
 
-  /// What the storefront's paperwork calls it: ISN when there is one, the
-  /// serial otherwise.
-  String get label => hasIsn ? isn! : sn;
+  /// How this unit is identified on a bill: the ISN, falling back to the
+  /// factory serial.
+  String get key => hasIsn ? isn! : sn;
+
+  /// What the storefront's paperwork calls it.
+  String get label => key;
 
   /// The label with the name of the thing it is, so a serial number is
   /// never printed under the word ISN. Only 115 of the 767 units standing

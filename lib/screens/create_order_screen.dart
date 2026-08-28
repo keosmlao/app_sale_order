@@ -42,7 +42,14 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   final _searchCtl = TextEditingController();
   // The serial-tracked unit chosen for a line, keyed by item code. Only the
   // storefront asks: elsewhere the stock is picked from a shelf, not by unit.
-  final Map<String, SerialUnit> _serialByItemCode = {};
+  // The units a line is taking, one per item on it. A line of two off the
+  // storefront shelf is two physical fridges with two ISNs, and the WMS
+  // issue-out at settle is per unit — one recorded unit against a
+  // quantity of two sold two and released one.
+  final Map<String, List<SerialUnit>> _serialsByItemCode = {};
+
+  List<SerialUnit> _serialsFor(String code) =>
+      _serialsByItemCode[code] ?? const [];
 
   List<InventoryItem> _items = const [];
   // Small server-loaded product set. The app no longer caches/preloads the
@@ -1246,7 +1253,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       setState(() {
         _qtyByCode.remove(item.code);
         _extraAllocByCode.remove(item.code);
-        _serialByItemCode.remove(item.code);
+        _serialsByItemCode.remove(item.code);
         _warehouseByItemCode.remove(item.code);
         _locationByItemCode.remove(item.code);
         _approvedPriceByCode.remove(item.code);
@@ -1397,6 +1404,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       }
     }
 
+    final was = _qtyByCode[item.code] ?? 0;
+    final finalQty = qty < 1 ? 1 : qty;
     setState(() {
       if (!_allItems.any((p) => p.code == item.code)) {
         _allItems = [..._allItems, item];
@@ -1404,11 +1413,33 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       if (!_items.any((p) => p.code == item.code) && item.companyBalance > 0) {
         _items = [..._items, item];
       }
-      final finalQty = qty < 1 ? 1 : qty;
       _qtyByCode[item.code] = finalQty;
       _trimExtraAllocations(item.code, finalQty);
       _recomputePromotions();
     });
+
+    // The primary row's quantity changed, so the units it names have to
+    // change with it. Going up asks — that is the moment the counter
+    // chooses which physical box goes out. Going down just drops the tail;
+    // nothing to decide, and no reason to make them re-pick what stays.
+    if (!isSet) {
+      final wh = _warehouseByItemCode[item.code]?.code;
+      final primaryQty = finalQty - _extraQtyFor(item.code);
+      if (wh == kStorefrontWarehouse && primaryQty > 0) {
+        final held = _serialsFor(item.code);
+        if (finalQty > was && held.length < primaryQty) {
+          await _maybePickSerial(item, wh!, wanted: primaryQty, alwaysAsk: true);
+          if (!mounted) return false;
+        } else if (held.length > primaryQty) {
+          setState(
+            () => _serialsByItemCode[item.code] = held
+                .take(primaryQty)
+                .toList(),
+          );
+        }
+      }
+    }
+
     // Check BOGO promos after the qty change so any newly-met trigger
     // thresholds top up the bonus line for the user.
     await _maybeAutoAddBogoBonus();
@@ -1489,7 +1520,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       final take = (wanted - here).clamp(1, picked.stock.floor());
       // Storefront stock goes out unit by unit, and that is as true of a
       // part-line as of a whole one.
-      final unit = await _chooseSerial(item, picked.warehouse.code);
+      final units = await _pickUnitsFor(
+        item,
+        picked.warehouse.code,
+        wanted: take,
+      );
       if (!mounted) return false;
       setState(() {
         final list = _extraAllocByCode.putIfAbsent(
@@ -1503,6 +1538,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         );
         if (existing >= 0) {
           list[existing].qty += take;
+          for (final u in units) {
+            if (!list[existing].units.any((h) => h.key == u.key)) {
+              list[existing].units.add(u);
+            }
+          }
         } else {
           list.add(
             _ExtraAllocation(
@@ -1510,8 +1550,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               location: picked.location,
               qty: take,
               stock: picked.stock,
-              serialNo: unit?.sn,
-              serialIsn: unit?.isn,
+              units: units,
             ),
           );
         }
@@ -1702,34 +1741,96 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   // back and the paperwork follows that number, not just the item code. So
   // once the storefront is chosen, ask which unit is going out. Anywhere
   // else the shelf is the answer and there is nothing to choose.
+  // Bring the line's units up to `wanted`, asking only where there is
+  // something to decide.
+  //
+  //   one unit on the shelf, first add  → take it; a list of one is not a
+  //                                       choice
+  //   more than one                     → ask
+  //   quantity raised                   → ask, every time. That is the
+  //                                       moment the counter picks which
+  //                                       physical unit goes out, with the
+  //                                       customer standing there, and a
+  //                                       line that fills itself in puts an
+  //                                       ISN on the bill nobody chose.
   Future<void> _maybePickSerial(
     InventoryItem item,
-    String warehouseCode,
-  ) async {
-    final picked = await _chooseSerial(item, warehouseCode);
-    if (picked != null && mounted) {
-      setState(() => _serialByItemCode[item.code] = picked);
+    String warehouseCode, {
+    int wanted = 1,
+    bool alwaysAsk = false,
+  }) async {
+    if (warehouseCode != kStorefrontWarehouse) return;
+    final units = await _fetchSerialUnits(item, warehouseCode);
+    if (!mounted || units.isEmpty) return;
+
+    // Anything already on the line that this warehouse still holds.
+    final held = _serialsFor(item.code)
+        .where((h) => units.any((u) => u.key == h.key))
+        .toList();
+
+    if (!alwaysAsk && held.isEmpty && units.length == 1) {
+      setState(() => _serialsByItemCode[item.code] = [units.first]);
+      return;
     }
+    if (held.length >= wanted) {
+      setState(
+        () => _serialsByItemCode[item.code] = held.take(wanted).toList(),
+      );
+      return;
+    }
+
+    final chosen = await _chooseSerials(
+      item: item,
+      units: units,
+      held: held,
+      wanted: wanted,
+    );
+    if (!mounted || chosen == null) return;
+    setState(() => _serialsByItemCode[item.code] = chosen);
   }
 
-  // The chooser on its own, so a part-line taken from a second warehouse
-  // can name its unit without overwriting the one the main line holds.
-  Future<SerialUnit?> _chooseSerial(
+  // Same question, but for a part-line taken from another warehouse: it
+  // keeps its own units, so the answer is returned rather than stored.
+  Future<List<SerialUnit>> _pickUnitsFor(
+    InventoryItem item,
+    String warehouseCode, {
+    required int wanted,
+  }) async {
+    if (warehouseCode != kStorefrontWarehouse) return const [];
+    final units = await _fetchSerialUnits(item, warehouseCode);
+    if (!mounted || units.isEmpty) return const [];
+    if (units.length == 1 && wanted <= 1) return [units.first];
+    final chosen = await _chooseSerials(
+      item: item,
+      units: units,
+      held: const [],
+      wanted: wanted,
+    );
+    return chosen ?? const [];
+  }
+
+  Future<List<SerialUnit>> _fetchSerialUnits(
     InventoryItem item,
     String warehouseCode,
   ) async {
-    if (warehouseCode != kStorefrontWarehouse) return null;
-    List<SerialUnit> units;
     try {
-      units = await AppScope.of(
+      return await AppScope.of(
         context,
       ).api.fetchSerials(code: item.code, warehouse: warehouseCode);
     } catch (_) {
-      return null; // not knowing the serial must not stop the sale
+      return const []; // not knowing the unit must not stop the sale
     }
-    if (!mounted || units.isEmpty) return null;
+  }
 
-    final picked = await showModalBottomSheet<SerialUnit>(
+  // The sheet. Returns the full set the line should hold, or null if the
+  // counter backed out and it should keep what it had.
+  Future<List<SerialUnit>?> _chooseSerials({
+    required InventoryItem item,
+    required List<SerialUnit> units,
+    required List<SerialUnit> held,
+    required int wanted,
+  }) async {
+    final picked = await showModalBottomSheet<List<SerialUnit>>(
       context: context,
       constraints: _sheetConstraints(context),
       isScrollControlled: true,
@@ -1737,7 +1838,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(kRadiusXl)),
       ),
-      builder: (ctx) => SafeArea(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final chosen = <SerialUnit>[...held];
+          return SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1755,10 +1859,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          // Name the list after what it actually holds.
-                          units.any((u) => u.hasIsn)
-                              ? 'ເລືອກເຄື່ອງ (ISN)'
-                              : 'ເລືອກເຄື່ອງ (SN)',
+                          // Name the list after what it actually holds,
+                          // and count the progress when more than one is
+                          // needed.
+                          '${units.any((u) => u.hasIsn) ? 'ເລືອກເຄື່ອງ (ISN)' : 'ເລືອກເຄື່ອງ (SN)'}'
+                          '${wanted > 1 ? ' ${chosen.length}/$wanted' : ''}',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w900,
@@ -1798,16 +1903,35 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 separatorBuilder: (_, __) => const SizedBox(height: 6),
                 itemBuilder: (_, i) {
                   final u = units[i];
+                  final on = chosen.any((c) => c.key == u.key);
+                  final full = chosen.length >= wanted;
                   final where = [
                     u.location,
                     u.rack,
                   ].where((e) => e != null && e.isNotEmpty).join(' · ');
                   return Material(
-                    color: AppColors.bg,
+                    color: on
+                        ? AppColors.primary.withValues(alpha: 0.10)
+                        : AppColors.bg,
                     borderRadius: BorderRadius.circular(kRadiusMd),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(kRadiusMd),
-                      onTap: () => Navigator.of(ctx).pop(u),
+                      // One to pick and one wanted: tapping is the whole
+                      // decision, so close on it. Otherwise the sheet is a
+                      // tally and stays open until it is filled.
+                      onTap: () {
+                        if (wanted <= 1) {
+                          Navigator.of(ctx).pop([u]);
+                          return;
+                        }
+                        setSheet(() {
+                          if (on) {
+                            chosen.removeWhere((c) => c.key == u.key);
+                          } else if (!full) {
+                            chosen.add(u);
+                          }
+                        });
+                      },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: kSpace3,
@@ -1816,9 +1940,15 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                         child: Row(
                           children: [
                             Icon(
-                              Icons.qr_code_2_rounded,
+                              on
+                                  ? Icons.check_circle_rounded
+                                  : Icons.qr_code_2_rounded,
                               size: 18,
-                              color: AppColors.primary,
+                              color: on
+                                  ? AppColors.primary
+                                  : (full
+                                        ? AppColors.textSoft
+                                        : AppColors.primary),
                             ),
                             const SizedBox(width: kSpace2),
                             Expanded(
@@ -1845,7 +1975,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                               ),
                             ),
                             Icon(
-                              Icons.chevron_right_rounded,
+                              wanted > 1
+                                  ? (on
+                                        ? Icons.remove_circle_outline_rounded
+                                        : Icons.add_circle_outline_rounded)
+                                  : Icons.chevron_right_rounded,
                               color: AppColors.textSoft,
                             ),
                           ],
@@ -1856,8 +1990,40 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 },
               ),
             ),
+            if (wanted > 1)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  kSpace3,
+                  0,
+                  kSpace3,
+                  kSpace3,
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: chosen.length == wanted
+                        ? () => Navigator.of(ctx).pop([...chosen])
+                        : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(vertical: kSpace3),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(kRadiusMd),
+                      ),
+                    ),
+                    child: Text(
+                      chosen.length == wanted
+                          ? 'ຢືນຢັນ'
+                          : 'ເລືອກອີກ ${wanted - chosen.length} ເຄື່ອງ',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
+      );
+        },
       ),
     );
 
@@ -2320,6 +2486,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               String? salespersonCode,
               String? serialNo,
               String? serialIsn,
+              List<SerialUnit> serialUnits,
             })
           >[];
       for (final entry in _qtyByCode.entries) {
@@ -2343,8 +2510,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             locationCode: _locationByItemCode[code]?.location,
             salespersonCode: sellerCode,
             // The unit chosen off the storefront shelf, if any.
-            serialNo: _serialByItemCode[code]?.sn,
-            serialIsn: _serialByItemCode[code]?.isn,
+            serialNo: _serialsFor(code).firstOrNull?.sn,
+            serialIsn: _serialsFor(code).firstOrNull?.isn,
+            serialUnits: _serialsFor(code),
           ));
         }
         for (final extra in extras) {
@@ -2357,8 +2525,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             warehouseCode: extra.warehouse.code,
             locationCode: extra.location.location,
             salespersonCode: sellerCode,
-            serialNo: extra.serialNo,
-            serialIsn: extra.serialIsn,
+            serialNo: extra.units.firstOrNull?.sn,
+            serialIsn: extra.units.firstOrNull?.isn,
+            serialUnits: extra.units,
           ));
         }
       }
@@ -4144,7 +4313,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       _promoChoiceByCode.clear();
       _buildableSetsByCode.clear();
       _setDetailsByCode.clear();
-      _serialByItemCode.clear();
+      _serialsByItemCode.clear();
       _selectedCustomer = null;
       _note = '';
       _extraDiscount = 0;
@@ -4322,7 +4491,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         required Warehouse? wh,
         required StockLocation? loc,
         required double rowStock,
-        required SerialUnit? unit,
+        required List<SerialUnit> units,
         required VoidCallback onRowDec,
         required VoidCallback? onRowInc,
         required VoidCallback onRowRemove,
@@ -4336,7 +4505,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             stock: rowStock,
             warehouse: wh,
             location: loc,
-            serial: unit,
+            serials: units,
             subtotal: unitPrice * rowQty,
             discountPct: _discountPct,
             discountAmount: discountAmount * part,
@@ -4378,7 +4547,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           wh: _warehouseByItemCode[p.code],
           loc: _locationByItemCode[p.code],
           rowStock: stock,
-          unit: _serialByItemCode[p.code],
+          units: _serialsFor(p.code).take(primaryQty).toList(),
           onRowDec: () async {
             // Taking from the total comes off this warehouse first, which
             // is what the row is asking for.
@@ -4409,14 +4578,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           wh: extra.warehouse,
           loc: extra.location,
           rowStock: extra.stock,
-          unit: extra.serialNo == null
-              ? null
-              : SerialUnit(
-                  sn: extra.serialNo!,
-                  isn: extra.serialIsn,
-                  location: extra.location.location,
-                  rack: null,
-                ),
+          units: extra.units,
           onRowDec: () async {
             await _changeExtra(p, extra, extra.qty - 1);
             refresh();
@@ -5015,7 +5177,7 @@ class _SelectedRow extends StatelessWidget {
     required this.qty,
     required this.stock,
     required this.warehouse,
-    this.serial,
+    this.serials = const [],
     required this.location,
     required this.subtotal,
     required this.discountPct,
@@ -5044,7 +5206,8 @@ class _SelectedRow extends StatelessWidget {
   final InventoryItem item;
   final int qty;
   final double stock;
-  final SerialUnit? serial;
+  // Every unit this row is taking off the shelf.
+  final List<SerialUnit> serials;
   final Warehouse? warehouse;
   final StockLocation? location;
   final double subtotal;
@@ -5325,27 +5488,63 @@ class _SelectedRow extends StatelessWidget {
               ],
             ),
           ),
-          if (serial != null) ...[
+          if (serials.isNotEmpty) ...[
             const SizedBox(height: 6),
-            // The unit that is leaving the shelf. Storefront paperwork goes
-            // by ISN, so that is what is shown when there is one.
+            // The units that are leaving the shelf — one chip each, because
+            // two of the same product are two different boxes and the
+            // paperwork names both. Storefront paperwork goes by ISN, so
+            // that is what is shown when there is one.
             Align(
               alignment: Alignment.centerLeft,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.primary50,
-                  borderRadius: BorderRadius.circular(kRadiusSm),
-                  border: Border.all(color: AppColors.primary100),
-                ),
-                child: Text(
-                  serial!.labelled,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.primaryDark,
-                  ),
-                ),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final u in serials)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary50,
+                        borderRadius: BorderRadius.circular(kRadiusSm),
+                        border: Border.all(color: AppColors.primary100),
+                      ),
+                      child: Text(
+                        u.labelled,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primaryDark,
+                        ),
+                      ),
+                    ),
+                  // Not every unit named yet — say so rather than let a
+                  // short list read as a complete one.
+                  if (serials.length < qty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(kRadiusSm),
+                        border: Border.all(
+                          color: AppColors.warning.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Text(
+                        'ຍັງບໍ່ໄດ້ເລືອກ ${qty - serials.length}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.warning,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ],
@@ -7742,9 +7941,8 @@ class _ExtraAllocation {
     required this.location,
     required this.qty,
     required this.stock,
-    this.serialNo,
-    this.serialIsn,
-  });
+    List<SerialUnit> units = const [],
+  }) : units = [...units]; // grows when the same warehouse is added again
 
   final Warehouse warehouse;
   final StockLocation location;
@@ -7752,8 +7950,9 @@ class _ExtraAllocation {
   // What that warehouse held when it was chosen — the row shows its own
   // shelf, not the primary warehouse's.
   final double stock;
-  final String? serialNo;
-  final String? serialIsn;
+  // The units taken from this warehouse — a part-line off the storefront
+  // shelf is still unit by unit.
+  final List<SerialUnit> units;
 }
 
 // What to do about a line whose warehouse is short.

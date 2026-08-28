@@ -260,6 +260,9 @@ class ApiClient {
         String? salespersonCode,
         String? serialNo,
         String? serialIsn,
+        // Every unit this line takes off the shelf. serialNo/serialIsn stay
+        // for the first one so an older server still gets something.
+        List<SerialUnit> serialUnits,
       })
     >
     items,
@@ -300,6 +303,15 @@ class ApiClient {
                   'serialNo': i.serialNo!.trim(),
                 if (i.serialIsn != null && i.serialIsn!.trim().isNotEmpty)
                   'serialIsn': i.serialIsn!.trim(),
+                if (i.serialUnits.isNotEmpty)
+                  'serialUnits': i.serialUnits
+                      .map(
+                        (u) => {
+                          if (u.sn.trim().isNotEmpty) 'sn': u.sn.trim(),
+                          if (u.hasIsn) 'isn': u.isn!.trim(),
+                        },
+                      )
+                      .toList(),
               },
             )
             .toList(),
