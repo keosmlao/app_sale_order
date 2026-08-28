@@ -1755,7 +1755,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'ເລືອກເຄື່ອງ (ISN)',
+                          // Name the list after what it actually holds.
+                          units.any((u) => u.hasIsn)
+                              ? 'ເລືອກເຄື່ອງ (ISN)'
+                              : 'ເລືອກເຄື່ອງ (SN)',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w900,
@@ -5290,7 +5293,7 @@ class _SelectedRow extends StatelessWidget {
                   border: Border.all(color: AppColors.primary100),
                 ),
                 child: Text(
-                  'ISN ${serial!.label}',
+                  serial!.labelled,
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,

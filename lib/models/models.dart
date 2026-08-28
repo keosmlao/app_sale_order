@@ -1747,9 +1747,18 @@ class SerialUnit {
   final String? location;
   final String? rack;
 
+  bool get hasIsn => isn != null && isn!.isNotEmpty;
+
   /// What the storefront's paperwork calls it: ISN when there is one, the
   /// serial otherwise.
-  String get label => (isn != null && isn!.isNotEmpty) ? isn! : sn;
+  String get label => hasIsn ? isn! : sn;
+
+  /// The label with the name of the thing it is, so a serial number is
+  /// never printed under the word ISN. Only 115 of the 767 units standing
+  /// in warehouse 1101 have an ISN on file; the rest are known by serial
+  /// alone, and calling those an ISN sends people looking for paperwork
+  /// that was never written.
+  String get labelled => hasIsn ? 'ISN $isn' : 'SN $sn';
 
   factory SerialUnit.fromJson(Map<String, dynamic> j) => SerialUnit(
     sn: (j['sn'] as String?)?.trim() ?? '',
@@ -1768,7 +1777,7 @@ class SerialUnit {
 class CartLineInput {
   final String productId;
   final int quantity;
-  final double price;          // unit price KIP, before any discount
+  final double price; // unit price KIP, before any discount
   final double customerDiscount; // member % amount for the whole line
 
   const CartLineInput({
@@ -1783,11 +1792,11 @@ class PricedLine {
   final String productId;
   final int quantity;
   final double price;
-  final double gross;             // price × quantity
-  final double customerDiscount;  // zeroed when a promo denies stacking
+  final double gross; // price × quantity
+  final double customerDiscount; // zeroed when a promo denies stacking
   final double promoDiscount;
-  final String promoLabel;        // '' when no promo touched the line
-  final double amount;            // net: gross − discounts, never below 0
+  final String promoLabel; // '' when no promo touched the line
+  final double amount; // net: gross − discounts, never below 0
   final bool awardsPoints;
   final bool awardsMemberDiscount;
 
@@ -1804,8 +1813,9 @@ class PricedLine {
     required this.awardsMemberDiscount,
   });
 
-  static double _num(dynamic v) =>
-      v == null ? 0.0 : (v is num ? v.toDouble() : double.tryParse('$v') ?? 0.0);
+  static double _num(dynamic v) => v == null
+      ? 0.0
+      : (v is num ? v.toDouble() : double.tryParse('$v') ?? 0.0);
 
   factory PricedLine.fromJson(Map<String, dynamic> j) => PricedLine(
     productId: (j['productId'] ?? '').toString(),
