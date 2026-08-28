@@ -163,6 +163,13 @@ class ApiClient {
         .toList();
   }
 
+  /// The home screen's figures — the same function the web home page runs,
+  /// so the app and the web cannot disagree about the same person's day.
+  Future<HomeDashboard> fetchHomeDashboard() async {
+    final res = await _get(_uri('/api/me/dashboard'), headers: _headers());
+    return HomeDashboard.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
   Future<MyStats> fetchMyStats() async {
     final res = await _get(_uri('/api/me/stats'), headers: _headers());
     return MyStats.fromJson(_decode(res) as Map<String, dynamic>);

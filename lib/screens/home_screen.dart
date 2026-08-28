@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../app_theme.dart';
 import '../services/presence.dart';
 import 'inventory_screen.dart';
-import 'my_dashboard_screen.dart';
+import 'home_dashboard_screen.dart';
 import 'create_order_screen.dart';
 import 'orders_screen.dart';
 import 'profile_screen.dart';
@@ -66,7 +66,7 @@ class _HomeScreenState extends State<HomeScreen> {
       label: 'ໜ້າຫຼັກ',
       icon: Icons.home_outlined,
       activeIcon: Icons.home_rounded,
-      page: MyDashboardScreen(),
+      page: HomeDashboardScreen(),
     ),
     // ຂາຍ is the shop, the way it is on the till — a salesperson opens the
     // app onto what they can sell, not onto what has already been sold.

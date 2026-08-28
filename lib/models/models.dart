@@ -1838,3 +1838,227 @@ class PricedLine {
     awardsMemberDiscount: j['awardsMemberDiscount'] != false,
   );
 }
+
+// ─── Home dashboard ──────────────────────────────────────────────────
+// Mirrors /api/me/dashboard, which is the same function the web home page
+// runs. Every figure is REALISED sales from the sale sheet, in ບາດ — not
+// the kip totals of open orders the app used to show. The two surfaces
+// disagreed about the same person's day; now they cannot.
+
+class HomeDay {
+  const HomeDay({this.sales = 0, this.qty = 0, this.bills = 0});
+  final double sales;
+  final double qty;
+  final int bills;
+
+  factory HomeDay.fromJson(Map<String, dynamic> j) => HomeDay(
+    sales: _toDouble(j['sales']),
+    qty: _toDouble(j['qty']),
+    bills: (j['bills'] as num?)?.toInt() ?? 0,
+  );
+}
+
+class HomeMonth {
+  const HomeMonth({this.sales = 0, this.bills = 0});
+  final double sales;
+  final int bills;
+
+  factory HomeMonth.fromJson(Map<String, dynamic> j) => HomeMonth(
+    sales: _toDouble(j['sales']),
+    bills: (j['bills'] as num?)?.toInt() ?? 0,
+  );
+}
+
+class HomeTarget {
+  const HomeTarget({
+    this.sales = 0,
+    this.qty = 0,
+    this.target = 0,
+    this.pct = 0,
+  });
+  final double sales;
+  final double qty;
+  final double target;
+
+  /// 0..1+, already worked out by the server so the two surfaces round the
+  /// same way.
+  final double pct;
+
+  bool get hasTarget => target > 0;
+
+  factory HomeTarget.fromJson(Map<String, dynamic> j) => HomeTarget(
+    sales: _toDouble(j['sales']),
+    qty: _toDouble(j['qty']),
+    target: _toDouble(j['target']),
+    pct: _toDouble(j['pct']),
+  );
+}
+
+class HomeRankEntry {
+  const HomeRankEntry({this.rank = 0, this.sales = 0});
+
+  /// 0 means unranked — no sales in that window.
+  final int rank;
+  final double sales;
+
+  factory HomeRankEntry.fromJson(Map<String, dynamic> j) => HomeRankEntry(
+    rank: (j['rank'] as num?)?.toInt() ?? 0,
+    sales: _toDouble(j['sales']),
+  );
+}
+
+class HomeRank {
+  const HomeRank({
+    this.teamSize = 0,
+    this.day = const HomeRankEntry(),
+    this.week = const HomeRankEntry(),
+    this.month = const HomeRankEntry(),
+  });
+  final int teamSize;
+  final HomeRankEntry day;
+  final HomeRankEntry week;
+  final HomeRankEntry month;
+
+  bool get ranked => teamSize > 0;
+
+  factory HomeRank.fromJson(Map<String, dynamic> j) => HomeRank(
+    teamSize: (j['teamSize'] as num?)?.toInt() ?? 0,
+    day: HomeRankEntry.fromJson(
+      (j['day'] as Map<String, dynamic>?) ?? const {},
+    ),
+    week: HomeRankEntry.fromJson(
+      (j['week'] as Map<String, dynamic>?) ?? const {},
+    ),
+    month: HomeRankEntry.fromJson(
+      (j['month'] as Map<String, dynamic>?) ?? const {},
+    ),
+  );
+}
+
+class HomeDailyPoint {
+  const HomeDailyPoint({
+    required this.day,
+    this.sales = 0,
+    this.bills = 0,
+  });
+  final DateTime day;
+  final double sales;
+  final int bills;
+
+  factory HomeDailyPoint.fromJson(Map<String, dynamic> j) => HomeDailyPoint(
+    day: DateTime.tryParse((j['day'] as String?) ?? '') ?? DateTime.now(),
+    sales: _toDouble(j['sales']),
+    bills: (j['bills'] as num?)?.toInt() ?? 0,
+  );
+}
+
+class HomeNamedAmount {
+  const HomeNamedAmount({
+    required this.name,
+    this.amount = 0,
+    this.qty = 0,
+  });
+  final String name;
+  final double amount;
+  final double qty;
+}
+
+class HomeBill {
+  const HomeBill({
+    required this.day,
+    required this.docNo,
+    this.amount = 0,
+    this.items = 0,
+  });
+  final String day;
+  final String docNo;
+  final double amount;
+  final int items;
+
+  factory HomeBill.fromJson(Map<String, dynamic> j) => HomeBill(
+    day: (j['day'] as String?) ?? '',
+    docNo: (j['docNo'] as String?) ?? '',
+    amount: _toDouble(j['amount']),
+    items: (j['items'] as num?)?.toInt() ?? 0,
+  );
+}
+
+class HomeDashboard {
+  const HomeDashboard({
+    this.employeeName = '',
+    this.today = const HomeDay(),
+    this.yesterday = const HomeDay(),
+    this.month = const HomeMonth(),
+    this.target = const HomeTarget(),
+    this.rank = const HomeRank(),
+    this.daily = const [],
+    this.categories = const [],
+    this.topItems = const [],
+    this.recentBills = const [],
+    this.pendingCount = 0,
+    this.pendingAmount = 0,
+  });
+
+  final String employeeName;
+  final HomeDay today;
+  final HomeDay yesterday;
+  final HomeMonth month;
+  final HomeTarget target;
+  final HomeRank rank;
+  final List<HomeDailyPoint> daily;
+  final List<HomeNamedAmount> categories;
+  final List<HomeNamedAmount> topItems;
+  final List<HomeBill> recentBills;
+
+  /// Front-store bills still sitting with the cashier. Not this person's
+  /// own, but it is what a seller checks before going home.
+  final int pendingCount;
+  final double pendingAmount;
+
+  /// Today against yesterday, as a fraction. Null when yesterday was zero —
+  /// "up 100%" from nothing is not a comparison worth printing.
+  double? get dayDelta => yesterday.sales > 0
+      ? (today.sales - yesterday.sales) / yesterday.sales
+      : null;
+
+  factory HomeDashboard.fromJson(Map<String, dynamic> j) {
+    List<HomeNamedAmount> named(String key, String nameKey) =>
+        ((j[key] as List<dynamic>?) ?? const [])
+            .map((e) => e as Map<String, dynamic>)
+            .map(
+              (m) => HomeNamedAmount(
+                name: (m[nameKey] as String?) ?? '—',
+                amount: _toDouble(m['amount']),
+                qty: _toDouble(m['qty']),
+              ),
+            )
+            .toList();
+
+    final pending = (j['pending'] as Map<String, dynamic>?) ?? const {};
+    return HomeDashboard(
+      employeeName:
+          ((j['employee'] as Map<String, dynamic>?)?['name'] as String?) ?? '',
+      today: HomeDay.fromJson((j['today'] as Map<String, dynamic>?) ?? const {}),
+      yesterday: HomeDay.fromJson(
+        (j['yesterday'] as Map<String, dynamic>?) ?? const {},
+      ),
+      month: HomeMonth.fromJson(
+        (j['month'] as Map<String, dynamic>?) ?? const {},
+      ),
+      target: HomeTarget.fromJson(
+        (j['target'] as Map<String, dynamic>?) ?? const {},
+      ),
+      rank: HomeRank.fromJson((j['rank'] as Map<String, dynamic>?) ?? const {}),
+      daily: ((j['daily'] as List<dynamic>?) ?? const [])
+          .map((e) => HomeDailyPoint.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      categories: named('categories', 'category'),
+      topItems: named('topItems', 'name'),
+      recentBills: ((j['recentBills'] as List<dynamic>?) ?? const [])
+          .map((e) => HomeBill.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      pendingCount: (pending['count'] as num?)?.toInt() ?? 0,
+      pendingAmount: _toDouble(pending['amount']),
+    );
+  }
+}
