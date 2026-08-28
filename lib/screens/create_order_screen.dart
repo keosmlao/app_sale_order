@@ -2539,7 +2539,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     // is a floating button carrying its count, and opens over the shelf —
     // which is how a shopping app does it anyway.
     if (!isTablet(context)) {
-      return Column(children: [_shopPaneHeader(), _shopPane()]);
+      return Column(
+        children: [_shopPaneHeader(withCustomer: true), _shopPane()],
+      );
     }
 
     // Catalogue on the left, the sale on the right. Two panes, not three —
@@ -2561,7 +2563,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       return IndexedStack(
         index: _portraitTab,
         children: [
-          Column(children: [_shopPaneHeader(), _shopPane()]),
+          Column(children: [_shopPaneHeader(withCustomer: true), _shopPane()]),
           _cartPane(selected),
         ],
       );
@@ -2827,6 +2829,24 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     );
   }
 
+  Widget _customerTag(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(kRadiusPill),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+          color: color,
+        ),
+      ),
+    );
+  }
+
   Widget _shopCustomerChip() {
     final c = _selectedCustomer;
     final picked = c != null;
@@ -2849,19 +2869,39 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 color: picked ? AppColors.primary : AppColors.warning,
               ),
               const SizedBox(width: 5),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 190),
-                child: Text(
-                  picked ? c.name : 'ເລືອກລູກຄ້າກ່ອນ',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: picked ? AppColors.primary : AppColors.warning,
+              Flexible(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 190),
+                  child: Text(
+                    picked ? c.name : 'ເລືອກລູກຄ້າກ່ອນ',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: picked ? AppColors.primary : AppColors.warning,
+                    ),
                   ),
                 ),
               ),
+              // What being this customer is worth, where the customer is
+              // chosen. The discount and the points decide what the
+              // counter says next, and they were only visible once the
+              // cart had something in it.
+              if (picked && c.discountPct > 0) ...[
+                const SizedBox(width: 5),
+                _customerTag(
+                  '−${c.discountPct % 1 == 0 ? c.discountPct.toInt() : c.discountPct}%',
+                  AppColors.success,
+                ),
+              ],
+              if (picked && c.pointBalance > 0) ...[
+                const SizedBox(width: 4),
+                _customerTag(
+                  '${_fmt.format(c.pointBalance)} ແຕ້ມ',
+                  AppColors.primary,
+                ),
+              ],
             ],
           ),
         ),
