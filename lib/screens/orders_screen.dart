@@ -697,77 +697,184 @@ class _OrderRow extends StatelessWidget {
         : '#${order.id.toUpperCase()}';
     final customer = order.customer?.name.trim() ?? '';
     final hasCustomer = customer.isNotEmpty && customer != '—';
-    // The bill number leads when there is no customer on file. A row whose
-    // first line reads "—" spends its most readable line saying nothing.
-    final headline = hasCustomer ? customer : docLabel;
+    final seller = order.salesperson?.displayName.trim() ?? '';
     final waited = order.status == 'PENDING'
         ? _waitedLabel(order.createdAt)
         : null;
 
+    // The thing on screen is a bill, so it is shaped like one: a stub
+    // carrying who and what state, a torn edge, and the amount on the
+    // counterfoil. The tear is not decoration — it puts the figure in its
+    // own field, which is where the eye goes when a stack of these is
+    // being scanned for one number.
     return Material(
       color: AppColors.cardBg,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(kRadiusLg),
-        side: BorderSide(color: AppColors.border, width: 1),
-      ),
+      borderRadius: BorderRadius.circular(kRadiusLg),
       clipBehavior: Clip.antiAlias,
+      elevation: 1.5,
+      shadowColor: Colors.black.withValues(alpha: 0.10),
       child: InkWell(
         onTap: onTap,
         child: IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(width: 4, color: statusColor),
+              Container(width: 5, color: statusColor),
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 10, 13),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Who and what state, on one line.
-                      Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // ── the stub ──
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(13, 11, 8, 11),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Expanded(
-                            child: Text(
-                              headline,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                                height: 1.25,
-                                letterSpacing: -0.15,
-                                fontFeatures: hasCustomer
-                                    ? null
-                                    : kTabularFigures,
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  docLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.3,
+                                    fontFeatures: kTabularFigures,
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 6),
+                              _StatusBadge(
+                                color: statusColor,
+                                label: statusLabel,
+                              ),
+                              if (order.source != null) ...[
+                                const SizedBox(width: 5),
+                                _SourceChip(source: order.source!),
+                              ],
+                              // Edit and delete live on the row, not two
+                              // taps in. A bill waiting to be paid is the
+                              // one that gets fixed, and it is fixed from
+                              // the list the seller is already looking at.
+                              if (onEdit != null || onDelete != null)
+                                _RowActions(onEdit: onEdit, onDelete: onDelete)
+                              else
+                                const SizedBox(width: 6),
+                            ],
                           ),
-                          const SizedBox(width: 8),
-                          _StatusBadge(color: statusColor, label: statusLabel),
-                          if (order.source != null) ...[
-                            const SizedBox(width: 5),
-                            _SourceChip(source: order.source!),
-                          ],
-                          // Edit and delete live on the row, not two taps
-                          // in. A bill waiting to be paid is the one that
-                          // gets fixed, and it is fixed from the list the
-                          // seller is already looking at.
-                          if (onEdit != null || onDelete != null)
-                            _RowActions(onEdit: onEdit, onDelete: onDelete)
-                          else
-                            const SizedBox(width: 4),
+                          const SizedBox(height: 9),
+                          Row(
+                            children: [
+                              // Who is on the bill. With no customer on
+                              // file — most of them — the seller stands
+                              // in, which is the name anyone chasing this
+                              // bill would ask for anyway.
+                              _Initial(
+                                text: hasCustomer ? customer : seller,
+                                color: hasCustomer
+                                    ? AppColors.primary
+                                    : AppColors.gold,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      hasCustomer
+                                          ? customer
+                                          : (seller.isEmpty ? '—' : seller),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: AppColors.textPrimary,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w800,
+                                        height: 1.2,
+                                        letterSpacing: -0.1,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 1),
+                                    Text(
+                                      hasCustomer && seller.isNotEmpty
+                                          ? 'ຜູ້ຂາຍ: $seller'
+                                          : 'ຜູ້ຂາຍ',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: AppColors.textMuted,
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    dateFmt.format(order.createdAt.toLocal()),
+                                    style: TextStyle(
+                                      color: AppColors.textMuted,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
+                                      fontFeatures: kTabularFigures,
+                                    ),
+                                  ),
+                                  // How long someone has been waiting on
+                                  // this bill. Past a quarter of an hour
+                                  // there is probably a person standing
+                                  // at the counter.
+                                  if (waited != null) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      waited.text,
+                                      style: TextStyle(
+                                        color: waited.late
+                                            ? AppColors.danger
+                                            : AppColors.textSoft,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 10),
-                      // The figure carries the row. It is what gets read
-                      // out, checked against a slip, and searched for.
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.baseline,
-                        textBaseline: TextBaseline.alphabetic,
+                    ),
+
+                    // ── the tear ──
+                    _TearLine(color: AppColors.divider, notch: AppColors.bg),
+
+                    // ── the counterfoil ──
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(13, 10, 14, 12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
+                          Text(
+                            'ຍອດບິນ',
+                            style: TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const Spacer(),
                           Text(
                             fmt.format(order.total),
                             style: TextStyle(
@@ -780,107 +887,114 @@ class _OrderRow extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 4),
-                          Text(
-                            'ກີບ',
-                            style: TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const Spacer(),
-                          // How long someone has been waiting on this
-                          // bill — past a quarter of an hour there is
-                          // probably a person standing at the counter.
-                          if (waited != null)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 1.5),
+                            child: Text(
+                              'ກີບ',
+                              style: TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
                               ),
-                              decoration: BoxDecoration(
-                                color: (waited.late
-                                        ? AppColors.danger
-                                        : AppColors.textMuted)
-                                    .withValues(alpha: 0.10),
-                                borderRadius: BorderRadius.circular(
-                                  kRadiusPill,
-                                ),
-                              ),
-                              child: Text(
-                                waited.text,
-                                style: TextStyle(
-                                  color: waited.late
-                                      ? AppColors.danger
-                                      : AppColors.textSecondary,
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 9),
-                      // Everything else, quiet and on one line: the bill
-                      // number (unless it is already the headline), who
-                      // sold it, and when.
-                      Row(
-                        children: [
-                          if (hasCustomer) ...[
-                            Flexible(
-                              child: Text(
-                                docLabel,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: AppColors.textMuted,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.2,
-                                  fontFeatures: kTabularFigures,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                          ],
-                          if (order.salesperson != null) ...[
-                            Icon(
-                              Icons.person_outline,
-                              size: 12,
-                              color: AppColors.gold,
-                            ),
-                            const SizedBox(width: 3),
-                            Flexible(
-                              child: Text(
-                                order.salesperson!.displayName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
-                          const Spacer(),
-                          Text(
-                            dateFmt.format(order.createdAt.toLocal()),
-                            style: TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              fontFeatures: kTabularFigures,
                             ),
                           ),
                         ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// The torn edge between the stub and the counterfoil: two half-circles
+// bitten out of the sides, and a dashed line between them.
+class _TearLine extends StatelessWidget {
+  const _TearLine({required this.color, required this.notch});
+  final Color color;
+  final Color notch;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget bite() => Container(
+      width: 11,
+      height: 11,
+      decoration: BoxDecoration(color: notch, shape: BoxShape.circle),
+    );
+    return SizedBox(
+      height: 12,
+      child: Row(
+        children: [
+          // The stripe is 5px wide, so the left bite sits just past it.
+          Transform.translate(offset: const Offset(-5.5, 0), child: bite()),
+          Expanded(
+            child: CustomPaint(
+              painter: _DashPainter(color),
+              child: const SizedBox(height: 12),
+            ),
+          ),
+          Transform.translate(offset: const Offset(5.5, 0), child: bite()),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashPainter extends CustomPainter {
+  const _DashPainter(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.4
+      ..strokeCap = StrokeCap.round;
+    const dash = 4.0;
+    const gap = 4.0;
+    final y = size.height / 2;
+    for (var x = 2.0; x < size.width - 2; x += dash + gap) {
+      canvas.drawLine(
+        Offset(x, y),
+        Offset((x + dash).clamp(0, size.width - 2), y),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashPainter old) => old.color != color;
+}
+
+// A name reduced to its first character. Two bills from the same seller
+// look alike at a glance without reading either name.
+class _Initial extends StatelessWidget {
+  const _Initial({required this.text, required this.color});
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = text.trim();
+    return Container(
+      width: 28,
+      height: 28,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        t.isEmpty ? '?' : t.characters.first,
+        style: TextStyle(
+          color: color,
+          fontSize: 13,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );
