@@ -184,6 +184,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   // Which of the two portrait tabs is showing: 0 shop, 1 cart.
   int _portraitTab = 0;
+  // True while the full-screen cart is pushed on top of this screen, so
+  // emptying the cart can send the seller back to the shelf without ever
+  // popping the POS itself.
+  bool _cartRouteOpen = false;
 
   // Debounce + generation guard for the pricing request. The generation
   // stops a slow reply to an old cart from overwriting a newer one.
@@ -1283,6 +1287,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         }
         _recomputePromotions();
       });
+      _leaveCartIfEmpty();
       return true;
     }
 
@@ -2881,6 +2886,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   }
 
   Future<void> _openCartScreen() async {
+    _cartRouteOpen = true;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         fullscreenDialog: true,
@@ -2903,7 +2909,21 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         ),
       ),
     );
+    _cartRouteOpen = false;
     if (mounted) setState(() {});
+  }
+
+  // An empty cart is nothing to look at. Whichever way the seller got to
+  // it — the pushed screen or the portrait tab — taking the last line off
+  // puts them back on the shelf, which is where the next thing they do
+  // is. Standing on a blank basket is a dead end they have to tap out of.
+  void _leaveCartIfEmpty() {
+    if (!mounted || _qtyByCode.isNotEmpty) return;
+    if (_cartRouteOpen) {
+      _cartRouteOpen = false;
+      Navigator.of(context).pop();
+    }
+    if (_portraitTab != 0) setState(() => _portraitTab = 0);
   }
 
   // Shop / cart, the way a shopping app does it. The cart carries the
@@ -4439,6 +4459,15 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   // Same sequence the picker sheet uses: settle any promo choice first, then
   // add one. Kept in one place so the two entry points cannot drift.
   Future<void> _addFromCatalog(InventoryItem p, int qty) async {
+    // Who is buying decides the price — the member discount, the approved
+    // special price, which promotions apply. Landing a line first and
+    // naming the customer after means every one of those is recomputed
+    // behind the counter's back, so the question is asked here, once,
+    // before anything is priced.
+    if (_selectedCustomer == null) {
+      _promptCustomerFirst();
+      return;
+    }
     // Same refusal the web POS makes. An item with no sale price on file
     // would go onto the bill at zero, and the counter has no way to spot
     // that before the customer has paid — so it does not go on at all
