@@ -180,6 +180,60 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return sum;
   }
 
+  Future<void> _editOrder(SaleOrder o) async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => CreateOrderScreen(editOrder: o)),
+    );
+    if (changed == true && mounted) _reload();
+  }
+
+  Future<void> _deleteOrder(SaleOrder o) async {
+    final label = o.docNo?.trim().isNotEmpty == true
+        ? o.docNo!
+        : '#${o.id.toUpperCase()}';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ລົບບິນ'),
+        content: Text(
+          'ລົບ $label ຖາວອນ?\n'
+          'ບິນນີ້ຍັງບໍ່ໄດ້ອອກໃບຮັບເງິນ ຈຶ່ງລົບໄດ້ — ແຕ່ລົບແລ້ວກູ້ຄືນບໍ່ໄດ້.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('ຍົກເລີກ'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('ລົບຖາວອນ'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await AppScope.of(context).api.deleteOrder(o.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.success,
+          content: Text('ລົບ $label ສຳເລັດ'),
+        ),
+      );
+      _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.danger,
+          content: Text('ລົບບໍ່ສຳເລັດ — $e'),
+        ),
+      );
+    }
+  }
+
   void _showDetail(SaleOrder o) {
     // Detail is now a full page — easier to read on a phone and lets the
     // user use the system back gesture instead of a tiny grab handle.
@@ -312,6 +366,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               statusColor: _statusColor(order.status),
                               statusLabel: _statusLabel(order.status),
                               onTap: () => _showDetail(order),
+                              // Only while no receipt exists. After that
+                              // the money has moved, and undoing it means
+                              // reversing cash and loyalty points — that
+                              // stays the cashier's job on the detail
+                              // screen, not a menu on a list.
+                              onEdit: order.status == 'PENDING'
+                                  ? () => _editOrder(order)
+                                  : null,
+                              onDelete: order.status == 'PENDING'
+                                  ? () => _deleteOrder(order)
+                                  : null,
                             ),
                           );
                         },
@@ -609,6 +674,8 @@ class _OrderRow extends StatelessWidget {
     required this.statusColor,
     required this.statusLabel,
     required this.onTap,
+    this.onEdit,
+    this.onDelete,
   });
 
   final SaleOrder order;
@@ -617,6 +684,11 @@ class _OrderRow extends StatelessWidget {
   final Color statusColor;
   final String statusLabel;
   final VoidCallback onTap;
+  // Only set while the bill is still waiting to be paid. Once a receipt
+  // exists the money has moved, and undoing that is the cashier's job on
+  // the detail screen, not a menu on a list.
+  final VoidCallback? onEdit;
+  final Future<void> Function()? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -683,6 +755,12 @@ class _OrderRow extends StatelessWidget {
                             const SizedBox(width: 6),
                             _SourceChip(source: order.source!),
                           ],
+                          // Edit and delete live on the row, not two taps
+                          // in. A bill waiting to be paid is the one that
+                          // gets fixed, and it is fixed from the list the
+                          // seller is already looking at.
+                          if (onEdit != null || onDelete != null)
+                            _RowActions(onEdit: onEdit, onDelete: onDelete),
                         ],
                       ),
                       const SizedBox(height: 6),
@@ -1769,6 +1847,72 @@ class _SourceChip extends StatelessWidget {
           fontSize: 10.5,
           fontWeight: FontWeight.w800,
         ),
+      ),
+    );
+  }
+}
+
+// The row's own edit / delete menu. Kept to an icon so it does not
+// compete with the customer name and the amount, which are what the row
+// is scanned for.
+class _RowActions extends StatelessWidget {
+  const _RowActions({required this.onEdit, required this.onDelete});
+
+  final VoidCallback? onEdit;
+  final Future<void> Function()? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 30,
+      height: 26,
+      child: PopupMenuButton<String>(
+        tooltip: 'ຈັດການບິນ',
+        padding: EdgeInsets.zero,
+        position: PopupMenuPosition.under,
+        icon: Icon(
+          Icons.more_horiz_rounded,
+          size: 19,
+          color: AppColors.textMuted,
+        ),
+        onSelected: (v) {
+          if (v == 'edit') onEdit?.call();
+          if (v == 'delete') unawaited(onDelete!());
+        },
+        itemBuilder: (_) => [
+          if (onEdit != null)
+            PopupMenuItem(
+              value: 'edit',
+              height: 44,
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.edit_outlined,
+                    size: 18,
+                    color: AppColors.textSecondary,
+                  ),
+                  const SizedBox(width: 10),
+                  const Text('ແກ້ໄຂບິນ'),
+                ],
+              ),
+            ),
+          if (onDelete != null)
+            PopupMenuItem(
+              value: 'delete',
+              height: 44,
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.delete_outline_rounded,
+                    size: 18,
+                    color: AppColors.danger,
+                  ),
+                  const SizedBox(width: 10),
+                  Text('ລົບບິນ', style: TextStyle(color: AppColors.danger)),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -828,7 +828,13 @@ class StockLocationRow {
   final String? warehouseName;
   final String? location;
   final String? locationName;
+  // What can still be sold: on the shelf, less what open orders promised.
   final int balanceQty;
+  // The two figures behind it, so a shelf that cannot be sold from can say
+  // why rather than just reading as empty.
+  final int onHand;
+  final int committedQty;
+  final String? heldBy;
 
   StockLocationRow({
     this.warehouse,
@@ -836,6 +842,9 @@ class StockLocationRow {
     this.location,
     this.locationName,
     required this.balanceQty,
+    this.onHand = 0,
+    this.committedQty = 0,
+    this.heldBy,
   });
 
   factory StockLocationRow.fromJson(Map<String, dynamic> j) => StockLocationRow(
@@ -844,6 +853,9 @@ class StockLocationRow {
     location: j['location'] as String?,
     locationName: j['locationName'] as String?,
     balanceQty: (j['balanceQty'] as num?)?.toInt() ?? 0,
+    onHand: (j['onHand'] as num?)?.toInt() ?? 0,
+    committedQty: (j['committedQty'] as num?)?.toInt() ?? 0,
+    heldBy: j['heldBy'] as String?,
   );
 }
 

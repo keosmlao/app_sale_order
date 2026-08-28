@@ -121,6 +121,13 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     _revision.value++;
   }
 
+  // The order being rewritten, when this screen opened in edit mode.
+  //
+  // Stock figures are net of what open orders have promised, and an order
+  // being edited is still open — without this it would hold its own units
+  // against itself and its own quantities would be unreachable.
+  String? get _editingDocNo => widget.editOrder?.docNo?.trim();
+
   // Extra warehouses a cart line draws from, beyond its primary one.
   //
   // A line stays one row for one product: the price, the promotion, the
@@ -1203,9 +1210,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       for (final entry in byWarehouse.entries) {
         final warehouseCode = entry.key;
         final itemCodes = entry.value.toSet().toList();
-        final balances = await AppScope.of(
-          context,
-        ).api.fetchStockBalance(itemCodes, warehouses: [warehouseCode]);
+        final balances = await AppScope.of(context).api.fetchStockBalance(
+          itemCodes,
+          warehouses: [warehouseCode],
+          excludeDocNo: _editingDocNo,
+        );
         if (!mounted) return;
         for (final code in itemCodes) {
           final loc = _locationByItemCode[code]?.location?.trim();
@@ -1957,7 +1966,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     // Lean call — the new /api/inventory/stock-locations endpoint runs the
     // warehouse-location stock function with WHERE balance_qty > 0 and
     // returns only the three columns we need.
-    final rows = await AppScope.of(context).api.fetchStockLocations(item.code);
+    final rows = await AppScope.of(
+      context,
+    ).api.fetchStockLocations(item.code, excludeDocNo: _editingDocNo);
 
     final options = <_WarehouseStockOption>[];
     for (final row in rows) {
@@ -1993,6 +2004,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             balanceAmount: 0,
           ),
           stock: stock,
+          committedQty: row.committedQty,
+          heldBy: row.heldBy,
         ),
       );
     }
@@ -6931,10 +6944,17 @@ class _WarehouseStockOption {
     required this.warehouse,
     required this.location,
     required this.stock,
+    this.committedQty = 0,
+    this.heldBy,
   });
   final Warehouse warehouse;
   final StockLocation location;
+  // Sellable: on the shelf, less what open orders have promised off it.
   final double stock;
+  // What is promised, and to whom. Shown so a shelf that reads as empty
+  // says where it went instead of looking like a stock error.
+  final int committedQty;
+  final String? heldBy;
 }
 
 // Bottom sheet opened from a cart line to pick which warehouse sources that
@@ -7172,8 +7192,8 @@ class _WarehouseStockPickerSheet extends StatelessWidget {
                                   covers
                                       ? 'ພຽງພໍ'
                                       : opt.stock <= 0
-                                      ? 'Backorder'
-                                      : 'ໃນສາງ',
+                                      ? 'ຂາຍບໍ່ໄດ້'
+                                      : 'ຂາຍໄດ້',
                                   style: TextStyle(
                                     color: covers
                                         ? AppColors.success

@@ -634,9 +634,13 @@ class ApiClient {
     );
   }
 
+  // Balances here are what can still be SOLD: on the shelf, less anything
+  // promised on a sales order that has not been settled. `excludeDocNo`
+  // keeps an order being rewritten from being counted against itself.
   Future<List<StockBalance>> fetchStockBalance(
     List<String> codes, {
     List<String>? warehouses,
+    String? excludeDocNo,
   }) async {
     if (codes.isEmpty) return const [];
     final res = await _post(
@@ -646,6 +650,8 @@ class ApiClient {
         'codes': codes,
         if (warehouses != null && warehouses.isNotEmpty)
           'warehouses': warehouses,
+        if (excludeDocNo != null && excludeDocNo.trim().isNotEmpty)
+          'excludeDocNo': excludeDocNo.trim(),
       }),
     );
     final data = _decode(res) as Map<String, dynamic>;
@@ -808,9 +814,16 @@ class ApiClient {
   // Lean warehouse+location breakdown for a single item. Fires after the
   // user picks a product so the warehouse picker has fresh stock data —
   // smaller payload + faster query than `fetchStockBalance`.
-  Future<List<StockLocationRow>> fetchStockLocations(String code) async {
+  Future<List<StockLocationRow>> fetchStockLocations(
+    String code, {
+    String? excludeDocNo,
+  }) async {
     final res = await _get(
-      _uri('/api/inventory/stock-locations', {'code': code}),
+      _uri('/api/inventory/stock-locations', {
+        'code': code,
+        if (excludeDocNo != null && excludeDocNo.trim().isNotEmpty)
+          'excludeDocNo': excludeDocNo.trim(),
+      }),
       headers: _headers(),
     );
     final data = _decode(res) as Map<String, dynamic>;
