@@ -4108,14 +4108,21 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       onRefresh: () => _fetchCatalog(_query.trim()),
       child: LayoutBuilder(
         builder: (context, box) {
-          // Six across a tablet held landscape, four upright, two on a
-          // phone. The counter's tablet is landscape on its stand, and at
-          // ~1280px six tiles still leave each one about 200px — enough
-          // for a photo and a name — while showing half again as much of
-          // the shelf without scrolling. On a 400px phone a third column
-          // would leave ~120px, which is not enough for either.
-          final landscape = box.maxWidth > box.maxHeight;
-          final columns = isTablet(context) ? (landscape ? 6 : 4) : 2;
+          // Counted off the width this pane actually has, not off the
+          // device: the same landscape tablet is a different shelf with
+          // the cart open, because the sale rail takes its share. Six
+          // across the full width, four once the rail is standing, and a
+          // phone stays at two — a third column there leaves ~120px a
+          // tile, which is not enough for a photo and a name that means
+          // anything.
+          final w = box.maxWidth;
+          final columns = !isTablet(context)
+              ? 2
+              : w >= 1100
+              ? 6
+              : w >= 700
+              ? 4
+              : 3;
           return NotificationListener<ScrollNotification>(
             // Fetch the next page a screen before the end, so the grid
             // keeps scrolling rather than stopping at a spinner.
