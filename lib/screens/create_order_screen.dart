@@ -1428,7 +1428,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       if (wh == kStorefrontWarehouse && primaryQty > 0) {
         final held = _serialsFor(item.code);
         if (finalQty > was && held.length < primaryQty) {
-          await _maybePickSerial(item, wh!, wanted: primaryQty, alwaysAsk: true);
+          await _maybePickSerial(item, wh!, wanted: primaryQty);
           if (!mounted) return false;
         } else if (held.length > primaryQty) {
           setState(
@@ -1757,7 +1757,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     InventoryItem item,
     String warehouseCode, {
     int wanted = 1,
-    bool alwaysAsk = false,
   }) async {
     if (warehouseCode != kStorefrontWarehouse) return;
     final units = await _fetchSerialUnits(item, warehouseCode);
@@ -1768,24 +1767,26 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         .where((h) => units.any((u) => u.key == h.key))
         .toList();
 
-    if (!alwaysAsk && held.isEmpty && units.length == 1) {
-      setState(() => _serialsByItemCode[item.code] = [units.first]);
+    // The line is taking every numbered unit the shelf has. There is no
+    // choice left to make — two of two go out, and asking which two is a
+    // question with one answer. This also covers the shelf that has
+    // fewer numbers than the line sells: take what exists and let the
+    // row say how many it still cannot name.
+    if (units.length <= wanted) {
+      setState(() => _serialsByItemCode[item.code] = List.of(units));
       return;
     }
+    // Already holding enough of them.
     if (held.length >= wanted) {
       setState(
         () => _serialsByItemCode[item.code] = held.take(wanted).toList(),
       );
       return;
     }
-    // Every numbered unit on this shelf is already on the line. The line
-    // is short only because the rest were never given a number — there is
-    // nothing to ask, so don't open a sheet that cannot be answered.
-    if (held.length >= units.length) {
-      setState(() => _serialsByItemCode[item.code] = held);
-      return;
-    }
 
+    // More on the shelf than the line is taking, so which ones is a real
+    // decision — and it is the counter's, made with the customer there,
+    // not something the line fills in on its own.
     final chosen = await _chooseSerials(
       item: item,
       units: units,
@@ -1806,7 +1807,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     if (warehouseCode != kStorefrontWarehouse) return const [];
     final units = await _fetchSerialUnits(item, warehouseCode);
     if (!mounted || units.isEmpty) return const [];
-    if (units.length == 1 && wanted <= 1) return [units.first];
+    // Same rule as the main line: nothing to decide when the part-line is
+    // taking every number this shelf has.
+    if (units.length <= wanted) return List.of(units);
     final chosen = await _chooseSerials(
       item: item,
       units: units,
