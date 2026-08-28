@@ -2539,9 +2539,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     // is a floating button carrying its count, and opens over the shelf —
     // which is how a shopping app does it anyway.
     if (!isTablet(context)) {
-      return Column(
-        children: [_shopPaneHeader(withCustomer: true), _shopPane()],
-      );
+      return Column(children: [_shopPaneHeader(), _shopPane()]);
     }
 
     // Catalogue on the left, the sale on the right. Two panes, not three —
@@ -2563,7 +2561,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       return IndexedStack(
         index: _portraitTab,
         children: [
-          Column(children: [_shopPaneHeader(withCustomer: true), _shopPane()]),
+          Column(children: [_shopPaneHeader(), _shopPane()]),
           _cartPane(selected),
         ],
       );
@@ -2583,15 +2581,21 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     // while the shelf went short next to it. It stands down until the
     // first item is added, and the catalogue browses at full width.
     if (selected.isEmpty) {
-      return Column(
-        children: [_shopPaneHeader(withCustomer: true), _shopPane()],
-      );
+      return Column(children: [_shopPaneHeader(), _shopPane()]);
     }
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(child: Column(children: [_shopPaneHeader(), _shopPane()])),
+        Expanded(
+          child: Column(
+            // The chip stays in the header even with the rail open. The
+            // rail's card is fuller, but it is off to the side of what the
+            // seller is actually looking at, and who they are selling to
+            // sets the price of every tile in front of them.
+            children: [_shopPaneHeader(), _shopPane()],
+          ),
+        ),
         Container(width: 1, color: AppColors.border),
         SizedBox(
           // minmax(430px, 500px), the rail's own sizing on the web.
@@ -2803,7 +2807,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     return MediaQuery.of(context).size.width < 1180;
   }
 
-  Widget _shopPaneHeader({bool withCustomer = false}) {
+  Widget _shopPaneHeader() {
     // The web labels the catalogue column and counts it. When the POS is
     // the tab there is no app bar overhead to carry the promo button, so
     // it rides here.
@@ -2819,10 +2823,12 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       action: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // With the rail stood down the customer control goes with it,
-          // and nothing can be added until one is picked — so it comes up
-          // here rather than leaving the screen with no way forward.
-          if (withCustomer) ...[_shopCustomerChip(), const SizedBox(width: 6)],
+          // Every layout carries this. Nothing can be added until a
+          // customer is picked, and who they are sets the price of every
+          // tile on the screen — the rail's fuller card is off to the side
+          // of what the seller is actually looking at.
+          _shopCustomerChip(),
+          const SizedBox(width: 6),
           _buildPromoAppBarButton(compact: true),
         ],
       ),
